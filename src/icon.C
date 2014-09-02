@@ -17,55 +17,54 @@ BTIcon::~BTIcon()
  {
   SDL_FreeSurface(img);
  }
-}
-
-void BTIcon::clear(BTDisplay &d)
-{
- int xMult, yMult;
- SDL_Rect dst;
- d.getMultiplier(xMult, yMult);
- dst.x = position.x * xMult;
- dst.y = position.y * yMult;
- dst.w = position.w * xMult;
- dst.h = position.h * yMult;
- d.clear(dst, true);
-}
-
-void BTIcon::draw(BTDisplay &d)
-{
- int xMult, yMult;
- SDL_Rect dst;
- d.getMultiplier(xMult, yMult);
- if (NULL == img)
+ if (animation.animation)
  {
-  SDL_RWops *f = PHYSFSRWOPS_openRead(image);
-  img = IMG_Load_RW(f, 1);
-  if (position.w != img->w)
-  {
-   position.w = img->w;
-  }
-  if (position.h != img->h)
-  {
-   position.h = img->h;
-  }
-  if ((xMult > 1) || (yMult > 1))
-  {
-   SDL_Surface *img2 = simpleZoomSurface(img, xMult, yMult);
-   SDL_FreeSurface(img);
-   img = img2;
-  }
+  IMG_FreeMNG(animation.animation);
+ }
+}
+
+void BTIcon::draw(BTDisplay &d, unsigned long ticks)
+{
+ int xMult, yMult;
+ SDL_Rect dst;
+ d.getMultiplier(xMult, yMult);
+ if ((NULL == img) && (NULL == animation.animation))
+ {
+  d.loadImageOrAnimation(image, &img, &animation.animation);
  }
  dst.x = position.x * xMult;
  dst.y = position.y * yMult;
  dst.w = position.w * xMult;
  dst.h = position.h * yMult;
- d.clear(dst, false);
- d.drawImage(dst, img);
+ if ((isActive()) && (active == false))
+ {
+  if (img)
+  {
+   d.drawImage(dst, img);
+  }
+  else
+  {
+   IMG_SetAnimationState(&animation, -1, 0);
+   animation.dst = dst;
+   d.addAnimation(&animation, true);
+  }
+  active = true;
+ }
+ else if ((!isActive()) && (active))
+ {
+  d.clear(dst, true);
+  if (animation.animation)
+   d.removeAnimation(&animation);
+  active = false;
+ }
 }
 
 bool BTIcon::isActive()
 {
- return BTGame::getGame()->hasEffectOfType(effect);
+ if (party)
+  return BTGame::getGame()->hasEffectOfType(effect, BTTARGET_PARTY, true);
+ else
+  return BTGame::getGame()->hasEffectOfType(effect);
 }
 
 void BTIcon::serialize(ObjectSerializer* s)
@@ -73,12 +72,17 @@ void BTIcon::serialize(ObjectSerializer* s)
  s->add("image", &image);
  s->add("position", &position);
  s->add("effect", &effect);
+ s->add("party", &party);
 }
 
 BTFacingIcon::BTFacingIcon()
+ : facing (-1)
 {
  for (int i = 0; i < BT_DIRECTIONS; ++i)
+ {
   dirImg[i] = 0;
+  dirAni[i].animation = 0;
+ }
 }
 
 BTFacingIcon::~BTFacingIcon()
@@ -89,44 +93,65 @@ BTFacingIcon::~BTFacingIcon()
   {
    SDL_FreeSurface(dirImg[i]);
   }
+  if (dirAni[i].animation)
+  {
+   IMG_FreeMNG(dirAni[i].animation);
+  }
  }
 }
 
-void BTFacingIcon::draw(BTDisplay &d)
+void BTFacingIcon::draw(BTDisplay &d, unsigned long ticks)
 {
- int xMult, yMult;
- SDL_Rect dst;
- BTIcon::draw(d);
- BTGame *g = BTGame::getGame();
- int facing = g->getFacing();
- d.getMultiplier(xMult, yMult);
- if (NULL == dirImg[facing])
+ bool oldActive = active;
+ BTIcon::draw(d, ticks);
+ if (active)
  {
-  const char *period = strrchr(image, '.');
-  std::string filename(image, period - image);
-  filename.append(1, '0' + facing);
-  filename += period;
-  SDL_RWops *f = PHYSFSRWOPS_openRead(filename.c_str());
-  dirImg[facing] = IMG_Load_RW(f, 1);
-  if (position.w != dirImg[facing]->w)
+  int xMult, yMult;
+  SDL_Rect dst;
+  BTGame *g = BTGame::getGame();
+  int newFacing = g->getFacing();
+  if (newFacing != facing)
   {
-   position.w = dirImg[facing]->w;
-  }
-  if (position.h != dirImg[facing]->h)
-  {
-   position.h = dirImg[facing]->h;
-  }
-  if ((xMult > 1) || (yMult > 1))
-  {
-   SDL_Surface *img2 = simpleZoomSurface(dirImg[facing], xMult, yMult);
-   SDL_FreeSurface(dirImg[facing]);
-   dirImg[facing] = img2;
+   d.getMultiplier(xMult, yMult);
+   dst.x = position.x * xMult;
+   dst.y = position.y * yMult;
+   dst.w = position.w * xMult;
+   dst.h = position.h * yMult;
+   if (dirAni[facing].animation)
+    d.removeAnimation(&dirAni[facing]);
+   d.clear(dst, true);
+   if (animation.animation)
+    d.drawImage(animation.dst, animation.animation->frame[animation.frame]);
+   else
+   {
+    d.drawImage(dst, img);
+   }
+   facing = newFacing;
+   if ((NULL == dirImg[facing]) && (NULL == dirAni[facing].animation))
+   {
+    const char *period = strrchr(image, '.');
+    std::string filename(image, period - image);
+    filename.append(1, '0' + facing);
+    filename += period;
+    d.loadImageOrAnimation(filename.c_str(), &dirImg[facing], &dirAni[facing].animation);
+   }
+   if (dirImg[facing])
+    d.drawImage(dst, dirImg[facing]);
+   else
+   {
+    IMG_SetAnimationState(&dirAni[facing], -1, 0);
+    dirAni[facing].dst = dst;
+    d.addAnimation(&dirAni[facing]);
+   }
   }
  }
- dst.x = position.x * xMult;
- dst.y = position.y * yMult;
- dst.w = position.w * xMult;
- dst.h = position.h * yMult;
- d.drawImage(dst, dirImg[facing]);
+ else
+ {
+  if (oldActive)
+  {
+   d.removeAnimation(&dirAni[facing]);
+  }
+  facing = -1;
+ }
 }
 

@@ -16,13 +16,18 @@ class BitField
 
   void clearAll();
   void clear(int index);
+  int count(int start = 0, int end = -1) const;
   bool isSet(int index) const;
   int getMaxSet() const;
   void move(int index, int where);
   void remove(int index);
   void set(int index);
+  bool toggle(int index);
 
   BitField operator&(const BitField &other) const;
+  BitField &operator|=(const BitField &other);
+  bool operator==(const BitField &other);
+  BitField &operator=(const BitField &other);
 
  private:
   void expand(int newSize);

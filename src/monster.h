@@ -11,6 +11,9 @@
 #include <file.h>
 #include "dice.h"
 #include "btconst.h"
+#include "combatant.h"
+#include "display.h"
+#include "factory.h"
 
 /*
  [monster]
@@ -44,11 +47,15 @@ class BTMonster : public XMLObject
  public:
   BTMonster(BinaryReadFile &f);
   BTMonster();
+  BTMonster(const BTMonster &copy);
   ~BTMonster();
 
-  const char *getName() const;
+  unsigned int calcXp() const;
+  const std::string &getName() const;
+  const std::string &getPluralName() const;
   IShort getAc() const;
   IShort getCombatAction(IShort round) const;
+  int getGender() const;
   const BTDice &getGold() const;
   const BTDice &getHp() const;
   IShort getLevel() const;
@@ -69,40 +76,58 @@ class BTMonster : public XMLObject
   IShort getStartDistance() const;
   unsigned int getXp() const;
   IBool isIllusion() const;
+  bool isWandering() const;
   bool savingThrow(int difficulty = BTSAVE_DIFFICULTY) const;
+  void setName(const std::string &nm);
+  void setPluralName(const std::string &nm);
+  void setLevel(IShort l);
+  void setPicture(IShort pic);
+  void setStartDistance(IShort d);
+  void useRangedOnGroup(BTDisplay &d, BTCombatantCollection *grp, int distance, int &activeNum);
   void write(BinaryWriteFile &f);
 
   virtual void serialize(ObjectSerializer* s);
+  void upgrade() {}
 
   static XMLObject *create(const XML_Char *name, const XML_Char **atts) { return new BTMonster; }
   static void readXML(const char *filename, XMLVector<BTMonster*> &monster);
   static void writeXML(const char *filename, XMLVector<BTMonster*> &monster);
 
  private:
-  char *name;
+  std::string name;
+  std::string pluralName;
+  int gender;
   IShort level;
   IShort startDistance;
   IShort move;
   IShort rateAttacks;
   IShort illusion;
-  IShort picture;
-  IShort combatAction[4];
+  PictureIndex picture;
+  std::vector<unsigned int> combatAction;
   IShort ac;
   IShort maxAppearing;
   BTDice hp;
   BTDice gold;
   IShort magicResistance;
+  bool wandering;
+  unsigned int xp;
 
   char *meleeMessage;
   BTDice meleeDamage;
-  IShort meleeExtra;
+  int meleeExtra;
 
   char *rangedMessage;
-  IShort rangedType;
-  IShort rangedSpell;
+  int rangedType;
+  int rangedSpell;
   BTDice rangedDamage;
-  IShort rangedExtra;
+  int rangedExtra;
   IShort range;
+};
+
+class BTMonsterListCompare : public BTSortCompare<BTMonster>
+{
+ public:
+  int Compare(const BTMonster &a, const BTMonster &b) const;
 };
 
 #endif

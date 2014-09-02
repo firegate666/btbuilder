@@ -42,12 +42,12 @@ bool BTJobChangeRuleSkill::compare(BTPc *pc)
 {
  if (greater != -1)
  {
-  if (pc->skill[skill] > greater)
+  if (pc->getSkill(skill) > greater)
    return true;
  }
  if (equal != -1)
  {
-  if (pc->skill[skill] == equal)
+  if (pc->getSkill(skill) == equal)
    return true;
  }
  return false;
@@ -55,7 +55,7 @@ bool BTJobChangeRuleSkill::compare(BTPc *pc)
 
 void BTJobChangeRuleSkill::serialize(ObjectSerializer* s)
 {
- s->add("skill", &skill, NULL, &BTGame::getGame()->getSkillList());
+ s->add("skill", &skill, NULL, &BTCore::getCore()->getSkillList());
  s->add("greater", &greater);
  s->add("equal", &equal);
 }
@@ -82,10 +82,11 @@ BTJobSkillPurchase *BTJobSkill::findNextPurchase(int current)
 
 void BTJobSkill::serialize(ObjectSerializer* s)
 {
- s->add("name", &skill, NULL, &BTGame::getGame()->getSkillList());
+ s->add("name", &skill, NULL, &BTCore::getCore()->getSkillList());
  s->add("value", &value);
  s->add("modifier", &modifier, NULL, &statLookup);
  s->add("improve", &improve);
+ s->add("improveLevel", &improveLevel);
  s->add("purchase", &purchase, &BTJobSkillPurchase::create);
 }
 
@@ -97,6 +98,16 @@ int BTJob::calcToHit(int level)
 int BTJob::calcSave(int level)
 {
  return save + (level / improveSave);
+}
+
+BTJobSkill *BTJob::getSkill(int skillIndex)
+{
+ for (int i = 0; i < skill.size(); ++i)
+ {
+  if (skill[i]->skill == skillIndex)
+   return skill[i];
+ }
+ return NULL;
 }
 
 bool BTJob::isAllowed(BTPc *pc, bool starting)
@@ -128,7 +139,8 @@ void BTJob::serialize(ObjectSerializer* s)
 {
  s->add("name", &name);
  s->add("abbreviation", &abbrev);
- s->add("picture", &picture);
+ s->add("malePicture", &malePicture);
+ s->add("femalePicture", &femalePicture);
  s->add("toHit", &toHit);
  s->add("improveToHit", &improveToHit);
  s->add("improveRateAttacks", &improveRateAttacks);
@@ -141,10 +153,10 @@ void BTJob::serialize(ObjectSerializer* s)
  s->add("skill", &skill, &BTJobSkill::create);
  s->add("changeRuleSkill", &changeRule, &BTJobChangeRuleSkill::create);
  s->add("changeRuleAtLeast", &changeRule, &BTJobChangeRuleAtLeast::create);
- s->add("xpChart", &xpChart, NULL, &BTGame::getGame()->getXpChartList());
+ s->add("xpChart", &xpChart, NULL, &BTCore::getCore()->getXpChartList());
  s->add("spells", &spells);
  s->add("advanced", &advanced);
- s->add("allowedRace", &allowedRace, &BTGame::getGame()->getRaceList());
+ s->add("allowedRace", &allowedRace, &BTCore::getCore()->getRaceList());
 }
 
 void BTJob::readXML(const char *filename, XMLVector<BTJob*> &job)
@@ -170,6 +182,11 @@ int BTJobList::getIndex(std::string name)
  return -1;
 }
 
+size_t BTJobList::size()
+{
+ return XMLVector<BTJob*>::size();
+}
+
 BTJobAbbrevList::BTJobAbbrevList(BTJobList *l)
  : jbList(l)
 {
@@ -189,5 +206,10 @@ int BTJobAbbrevList::getIndex(std::string name)
   if (strcmp(name.c_str(), (*jbList)[i]->abbrev) == 0)
    return i;
  return -1;
+}
+
+size_t BTJobAbbrevList::size()
+{
+ return jbList->size();
 }
 

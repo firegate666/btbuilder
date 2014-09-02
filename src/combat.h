@@ -13,6 +13,7 @@
 #include "map.h"
 #include "screenset.h"
 #include "spelleffect.h"
+#include "effectgroup.h"
 #include <map>
 
 class BTCombatError
@@ -23,22 +24,43 @@ class BTCombatError
   std::string error;
 };
 
-class BTMonsterGroup
+class BTMonsterGroup;
+
+class BTMonsterCombatant : public BTCombatant
 {
  public:
-  BTMonsterGroup() : monsterName(0), canMove(true) {}
+  BTMonsterCombatant(BTMonsterGroup *grp, int startLevel, int startJob, int startAc, int startToHit, int startHp) : BTCombatant(startLevel, startJob, startAc, startToHit, startHp), group(grp) {}
+
+  void deactivate(int &activeNum);
+  int getGender() const;
+  std::string getName() const;
+  bool isIllusion() const;
+  bool savingThrow(int difficulty = BTSAVE_DIFFICULTY) const;
+
+ protected:
+  BTMonsterGroup *group;
+};
+
+class BTMonsterGroup : public BTCombatantCollection
+{
+ public:
+  BTMonsterGroup() : canMove(true) {}
   ~BTMonsterGroup();
 
   int findTarget(int ind = BTTARGET_INDIVIDUAL);
+  const std::string &getName() const;
   void push(int d);
   void setMonsterType(int type, int number = 0);
 
+  BTCombatant* at(size_t index);
+  int getDistance();
+  size_t size();
+
   int monsterType;
-  char *monsterName;
   int distance;
   int active;
   bool canMove;
-  std::vector<BTCombatant> individual;
+  std::vector<BTMonsterCombatant> individual;
 };
 
 class BTCombatScreen : public BTScreenSetScreen
@@ -52,25 +74,21 @@ class BTCombatScreen : public BTScreenSetScreen
   static XMLObject *create(const XML_Char *name, const XML_Char **atts);
 };
 
-class BTCombat : public BTScreenSet
+class BTCombat : public BTScreenSet, public BTEffectGroup
 {
  public:
   BTCombat();
   ~BTCombat();
 
-  void addEffect(BTBaseEffect *e);
   void addEncounter(int monsterType, int number = 0);
-  void addPlayer(BTDisplay &d, int who);
-  void clearEffects(BTDisplay &d);
   void clearEncounters();
+  bool findNextInitiative(int &group, int &individual);
   int findScreen(int num);
   bool findTarget(BTPc &pc, int range, BTMonsterGroup *&grp, int &target);
   bool findTargetPC(int range, int &target, int ignore = BT_PARTYSIZE);
-  bool hasEffectOfType(int type, int group = BTTARGET_NONE, int target = BTTARGET_INDIVIDUAL);
   BTMonsterGroup *getMonsterGroup(int group);
   void initScreen(BTDisplay &d);
   bool isWinner() { return won; }
-  void movedPlayer(BTDisplay &d, int who, int where);
   virtual void open(const char *filename);
   void run(BTDisplay &d, bool partyAttack = false);
   void runCombat(BTDisplay &d);
@@ -83,6 +101,7 @@ class BTCombat : public BTScreenSet
   static int cast(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
   static int combatOption(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
   static int defend(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
+  static int hide(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
   static int partyAttack(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
   static int runAway(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
   static int sing(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
@@ -90,7 +109,6 @@ class BTCombat : public BTScreenSet
   static int useItem(BTScreenSet &b, BTDisplay &d, BTScreenItem *item, int key);
 
  private:
-  void debugActive();
   bool endRound(BTDisplay &d);
 
  private:
@@ -98,12 +116,13 @@ class BTCombat : public BTScreenSet
   bool optionState;
   int round;
   std::list<BTMonsterGroup> monsters;
-  XMLVector<BTBaseEffect*> effect;
   char *partyLabel;
   int treasurePic;
   char *treasureLabel;
   unsigned int xp;
   unsigned int gold;
+  int previousPic;
+  std::string previousLabel;
 
   char* monsterNames;
   bool canAdvance;

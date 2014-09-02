@@ -15,21 +15,24 @@ BTItem::BTItem(BinaryReadFile &f)
 {
  IUByte unknown;
  char tmp[26];
+ IShort num;
 
  f.readUByteArray(25, (IUByte *)tmp);
  tmp[25] = 0;
- name = new char[strlen(tmp) + 1];
- strcpy(name, tmp);
+ name = tmp;
  f.readUByte(unknown);
  f.readShort(timesUsable);
  damage.read(f);
  f.readUByte(unknown);
  f.readShort(armorPlus);
  f.readShort(hitPlus);
- f.readShort(xSpecial);
+ f.readShort(num);
+ xSpecial = num;
  f.readShort(chanceXSpecial);
- f.readShort(type);
- f.readShort(spellCast);
+ f.readShort(num);
+ type = num;
+ f.readShort(num);
+ spellCast = num;
  IShort jobAllowed;
  f.readShort(jobAllowed);
  for (int i = 0; i < 11; i++)
@@ -46,22 +49,35 @@ BTItem::BTItem(BinaryReadFile &f)
  tmp[24] = 0;
  effect = new char[strlen(tmp) + 1];
  strcpy(effect, tmp);
+ if ((BTITEM_ARROW == type) || (BTITEM_THROWNWEAPON == type))
+  consume = true;
+ else
+  consume = false;
 }
 
 BTItem::BTItem()
+ : timesUsable(0), armorPlus(0), hitPlus(0), xSpecial(0), chanceXSpecial(0), price(0), spellCast(0), type(0)
 {
- name = new char[1];
- name[0] = 0;
  cause = new char[1];
  cause[0] = 0;
  effect = new char[1];
  effect[0] = 0;
+ consume = false;
+}
+
+BTItem::BTItem(const BTItem &copy)
+ : name(copy.name), timesUsable(copy.timesUsable), damage(copy.damage), armorPlus(copy.armorPlus), hitPlus(copy.hitPlus),
+ xSpecial(copy.xSpecial), chanceXSpecial(copy.chanceXSpecial), type(copy.type), spellCast(copy.spellCast),
+ classAllowed(copy.classAllowed), price(copy.price), consume(copy.consume)
+{
+ cause = new char[strlen(copy.cause) + 1];
+ strcpy(cause, copy.cause);
+ effect = new char[strlen(copy.effect) + 1];
+ strcpy(effect, copy.effect);
 }
 
 BTItem::~BTItem()
 {
- if (name)
-  delete [] name;
  if (cause)
   delete [] cause;
  if (effect)
@@ -73,7 +89,7 @@ bool BTItem::canUse(BTPc *pc) const
  return classAllowed.isSet(pc->job);
 }
 
-const char *BTItem::getName() const
+const std::string &BTItem::getName() const
 {
  return name;
 }
@@ -133,12 +149,18 @@ IShort BTItem::getXSpecial() const
  return xSpecial;
 }
 
+bool BTItem::isConsumed() const
+{
+ return consume;
+}
+
 void BTItem::write(BinaryWriteFile &f)
 {
  IUByte unknown = 0x00;
  char tmp[25];
+ IShort num;
 
- strncpy(tmp, name, 25);
+ strncpy(tmp, name.c_str(), 25);
  f.writeUByteArray(25, (IUByte *)tmp);
  f.writeUByte(unknown);
  f.writeShort(timesUsable);
@@ -146,10 +168,13 @@ void BTItem::write(BinaryWriteFile &f)
  f.writeUByte(unknown);
  f.writeShort(armorPlus);
  f.writeShort(hitPlus);
- f.writeShort(xSpecial);
+ num = xSpecial;
+ f.writeShort(num);
  f.writeShort(chanceXSpecial);
- f.writeShort(type);
- f.writeShort(spellCast);
+ num = type;
+ f.writeShort(num);
+ num = spellCast;
+ f.writeShort(num);
  IShort jobAllowed(0);
  for (int i = 0; i < 11; i++)
  {
@@ -171,14 +196,16 @@ void BTItem::serialize(ObjectSerializer* s)
  s->add("damage", &damage);
  s->add("armorPlus", &armorPlus);
  s->add("hitPlus", &hitPlus);
- s->add("xSpecial", &xSpecial);
+ s->add("xSpecial", &xSpecial, NULL, &extraDamageLookup);
  s->add("chanceXSpecial", &chanceXSpecial);
- s->add("type", &type);
+ s->add("type", &type, NULL, &itemTypesLookup);
  s->add("spellCast", &spellCast);
- s->add("allowedJob", &classAllowed, &BTGame::getGame()->getJobList());
+ s->add("spell", &spellCast, NULL, &BTCore::getCore()->getSpellList(), -1, "(none)");
+ s->add("allowedJob", &classAllowed, &BTCore::getCore()->getJobList());
  s->add("price", &price);
  s->add("cause", &cause);
  s->add("effect", &effect);
+ s->add("consume", &consume);
 }
 
 void BTItem::readXML(const char *filename, XMLVector<BTItem*> &item)
@@ -193,5 +220,10 @@ void BTItem::writeXML(const char *filename, XMLVector<BTItem*> &item)
  XMLSerializer parser;
  parser.add("item", &item, &BTItem::create);
  parser.write(filename, true);
+}
+
+int BTItemListCompare::Compare(const BTItem &a, const BTItem &b) const
+{
+ return strcmp(a.getName().c_str(), b.getName().c_str());
 }
 

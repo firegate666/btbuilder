@@ -9,25 +9,184 @@
 #include "game.h"
 #include "status.h"
 
+BTCore *BTCore::core = NULL;
 BTGame *BTGame::game = NULL;
 
+BTCore::BTCore(BTModule *m)
+ : module(m), itemList(".ITM"), monsterList(".MON"), spellList(".SPL"), levelMap(NULL)
+{
+ if (NULL == core)
+ {
+  core = this;
+ }
+ BTRace::readXML(m->race, raceList);
+ BTSkill::readXML(m->skill, skillList);
+ BTXpChart::readXML(m->xpChart, xpChartList);
+ BTJob::readXML(m->job, jobList);
+ BTShop::readXML("shops.xml", shops);
+ spellList.load(m->spell);
+ itemList.load(m->item);
+ monsterList.load(m->monster);
+ BTSong::readXML(m->song, songList);
+ Psuedo3DConfig::readXML(m->wall, p3dConfigList);
+}
+
+BTCore::~BTCore()
+{
+ if (levelMap)
+ {
+  delete levelMap;
+ }
+ if (core == this)
+ {
+  core = NULL;
+ }
+}
+
+BTFactory<BTItem> &BTCore::getItemList()
+{
+ return itemList;
+}
+
+BTJobList &BTCore::getJobList()
+{
+ return jobList;
+}
+
+BTModule *BTCore::getModule()
+{
+ return module;
+}
+
+BTFactory<BTMonster> &BTCore::getMonsterList()
+{
+ return monsterList;
+}
+
+Psuedo3DConfigList &BTCore::getPsuedo3DConfigList()
+{
+ return p3dConfigList;
+}
+
+BTRaceList &BTCore::getRaceList()
+{
+ return raceList;
+}
+
+BTShop *BTCore::getShop(int id)
+{
+ for (int i = 0; i < shops.size(); ++i)
+ {
+  if (shops[i]->id == id)
+  {
+   return shops[i];
+  }
+ }
+ BTShop *shop = new BTShop;
+ shop->id = id;
+ shop->initDefault();
+ shops.push_back(shop);
+ return shop;
+}
+
+BTSkillList &BTCore::getSkillList()
+{
+ return skillList;
+}
+
+XMLVector<BTSong*> &BTCore::getSongList()
+{
+ return songList;
+}
+
+BTFactory<BTSpell, BTSpell1> &BTCore::getSpellList()
+{
+ return spellList;
+}
+
+BTXpChartList &BTCore::getXpChartList()
+{
+ return xpChartList;
+}
+
+BTMap *BTCore::getMap()
+{
+ return levelMap;
+}
+
+BTMap *BTCore::loadMap(const char *filename)
+{
+ std::string finalname = filename;
+ int len = strlen(filename);
+ if ((len > 4) && (strcmp(".MAP", filename + (len - 4)) == 0))
+ {
+  char tmp[len + 1];
+  strcpy(tmp, filename);
+  strcpy(tmp + len - 3, "xml");
+  if (0 != PHYSFS_exists(tmp))
+  {
+   finalname = tmp;
+   len = finalname.length();
+  }
+ }
+ if (levelMap)
+ {
+  std::string name = levelMap->getFilename();
+  if (name == finalname)
+   return levelMap;
+  delete levelMap;
+ }
+ if ((len > 4) && (strcmp(".MAP", finalname.c_str() + (len - 4)) == 0))
+ {
+  BinaryReadFile levelFile(finalname.c_str());
+  levelMap = new BTMap(levelFile);
+ }
+ else
+ {
+  levelMap = new BTMap(1); // Assume version 1 file unless version is in the file.
+  XMLSerializer parser;
+  levelMap->serialize(&parser);
+  parser.parse(finalname.c_str(), true);
+  levelMap->upgrade();
+ }
+ levelMap->setFilename(finalname.c_str());
+ return levelMap;
+}
+
+int BTCore::getMapType(int x, int y, int direction)
+{
+ return getMap()->getSquare(y, x).getWall(direction);
+}
+
+int BTCore::getXSize() const
+{
+ return levelMap->getXSize();
+}
+
+int BTCore::getYSize() const
+{
+ return levelMap->getYSize();
+}
+
+bool BTCore::hasSpecial(int x, int y)
+{
+ return (levelMap->getSquare(y, x).getSpecial() >= 0);
+}
+
+BTCore *BTCore::getCore()
+{
+ return core;
+}
+
 BTGame::BTGame(BTModule *m)
- : module(m), itemList(".ITM"), jobAbbrevList(&jobList), monsterList(".MON"), spellList(".SPL"), levelMap(NULL), gameTime(0), timedSpecial(-1), delay(1000)
+ : BTCore(m), jobAbbrevList(&jobList), gameTime(0), timedSpecial(-1), delay(1000)
 {
  BTDice::Init();
  if (NULL == game)
  {
   game = this;
  }
- BTRace::readXML(m->race, raceList);
- BTSkill::readXML(m->skill, skillList);
- BTXpChart::readXML(m->xpChart, xpChartList);
- BTJob::readXML(m->job, jobList);
  BTPc::readXML("roster.xml", group, roster);
- spellList.load(m->spell);
- itemList.load(m->item);
- monsterList.load(m->monster);
- BTSong::readXML(m->song, songList);
  loadStart();
  combat.open("data/combat.xml");
  status.open("data/status.xml");
@@ -35,10 +194,6 @@ BTGame::BTGame(BTModule *m)
 
 BTGame::~BTGame()
 {
- if (levelMap)
- {
-  delete levelMap;
- }
  if (game == this)
  {
   game = NULL;
@@ -50,29 +205,9 @@ XMLVector<BTGroup*> &BTGame::getGroup()
  return group;
 }
 
-BTFactory<BTItem> &BTGame::getItemList()
-{
- return itemList;
-}
-
-BTJobList &BTGame::getJobList()
-{
- return jobList;
-}
-
 BTJobAbbrevList &BTGame::getJobAbbrevList()
 {
  return jobAbbrevList;
-}
-
-BTFactory<BTMonster> &BTGame::getMonsterList()
-{
- return monsterList;
-}
-
-BTRaceList &BTGame::getRaceList()
-{
- return raceList;
 }
 
 XMLVector<BTPc*> &BTGame::getRoster()
@@ -80,73 +215,56 @@ XMLVector<BTPc*> &BTGame::getRoster()
  return roster;
 }
 
-BTSkillList &BTGame::getSkillList()
-{
- return skillList;
-}
-
-XMLVector<BTSong*> &BTGame::getSongList()
-{
- return songList;
-}
-
-BTFactory<BTSpell> &BTGame::getSpellList()
-{
- return spellList;
-}
-
-BTXpChartList &BTGame::getXpChartList()
-{
- return xpChartList;
-}
-
-BTMap *BTGame::getMap()
-{
- return levelMap;
-}
-
-BTMap *BTGame::loadMap(const char *filename)
+BTMap *BTGame::loadMap(const char *filename, bool clearState /*= true*/)
 {
  if (levelMap)
  {
   std::string name = levelMap->getFilename();
   if (name == filename)
    return levelMap;
-  delete levelMap;
+  int len = strlen(filename);
+  if ((len > 4) && (strcmp(".MAP", filename + (len - 4)) == 0))
+  {
+   char tmp[len + 1];
+   strcpy(tmp, filename);
+   strcpy(tmp + len - 3, "xml");
+   if (name == tmp)
+   {
+    return levelMap;
+   }
+  }
  }
- local.clearAll();
- clearTimedSpecial();
- clearMapEffects();
- int len = strlen(filename);
- if ((len > 4) && (strcmp(".MAP", filename + (len - 4)) == 0))
+ if (clearState == false)
  {
-  BinaryReadFile levelFile(filename);
-  levelMap = new BTMap(levelFile);
+  local.clearAll();
+  knowledge.clearAll();
+  clearTimedSpecial();
+  clearMapEffects();
  }
- else
- {
-  levelMap = new BTMap;
-  XMLSerializer parser;
-  levelMap->serialize(&parser);
-  parser.parse(filename, true);
- }
- levelMap->setFilename(filename);
- return levelMap;
+ BTCore::loadMap(filename);
 }
 
 void BTGame::loadStart()
 {
- PHYSFS_file *start = PHYSFS_openRead(module->start);
- char levelName[14];
- PHYSFS_read(start, levelName, 1, 14);
- loadMap(levelName);
- PHYSFS_uint16 tmp;
- PHYSFS_readULE16(start, &tmp);
- xPos = tmp;
- PHYSFS_readULE16(start, &tmp);
- yPos = levelMap->getYSize() - 1 - tmp;
- PHYSFS_readULE16(start, &tmp);
- facing = tmp;
+ if (module->startMap.empty())
+ {
+  PHYSFS_file *start = PHYSFS_openRead("START.BRD");
+  char levelName[15];
+  levelName[14] = 0; // Ensure it ends with a null
+  PHYSFS_read(start, levelName, 1, 14);
+  module->startMap = levelName;
+  PHYSFS_uint16 tmp;
+  PHYSFS_readULE16(start, &tmp);
+  module->startX = tmp;
+  PHYSFS_readULE16(start, &tmp);
+  module->startY = tmp;
+  PHYSFS_readULE16(start, &tmp);
+  module->startFace = tmp;
+ }
+ loadMap(module->startMap.c_str());
+ xPos = module->startX;
+ yPos = levelMap->getYSize() - 1 - module->startY;
+ facing = module->startFace;
 }
 
 BTParty &BTGame::getParty()
@@ -161,36 +279,53 @@ int BTGame::getLight()
  {
   if (BTSPELLTYPE_LIGHT == (*itr)->type)
   {
-   if (light < 5)
+   BTLightEffect *l = dynamic_cast<BTLightEffect*>(*itr);
+   if (l)
+   {
+    if (l->illumination > light)
+     light = l->illumination;
+   }
+   else if (light < 5)
     light = 5;
   }
  }
  return light;
 }
 
-int BTGame::getFacing()
+const BitField &BTGame::getFlags()
 {
- return facing;
+ return flags;
 }
 
-int BTGame::getX()
+void BTGame::addFlags(BTDisplay &d, const BitField &flagsToAdd)
 {
- return xPos;
-}
-
-int BTGame::getY()
-{
- return yPos;
+ flags |= flagsToAdd;
+ bool effectChange = false;
+ if (flagsToAdd.isSet(BTSPECIALFLAG_DARKNESS))
+ {
+  clearEffectsByType(d, BTSPELLTYPE_LIGHT);
+  effectChange = true;
+ }
+ if (flagsToAdd.isSet(BTSPECIALFLAG_SILENCE))
+ {
+  clearEffectsBySource(d, true);
+  effectChange = true;
+ }
+ if (flagsToAdd.isSet(BTSPECIALFLAG_ANTIMAGIC))
+ {
+  clearEffectsBySource(d, false);
+  effectChange = true;
+ }
+ if (effectChange)
+ {
+  checkExpiration(d, &combat);
+  d.drawIcons();
+ }
 }
 
 int BTGame::getWallType(int x, int y, int direction)
 {
- if (x < 0)
-  x += levelMap->getXSize();
- x = x % levelMap->getXSize();
- if (y < 0)
-  y += levelMap->getYSize();
- y = y % levelMap->getYSize();
+ rationalize(x, y);
  IShort w = levelMap->getSquare(y, x).getWall(direction);
  bool bHasDoorDetect = false;
  if (w == 0)
@@ -206,22 +341,54 @@ int BTGame::getWallType(int x, int y, int direction)
     return 0;
   }
  }
- if (w == 2)
-  return 2;
- else if (w == 3)
+ int mapType = p3dConfig->findMapType(w, true);
+ if (mapType == 0)
+  return 0;
+ if (bHasDoorDetect)
  {
-  if (bHasDoorDetect)
-  {
-   return 2;
-  }
-  return 1;
+  if (-1 != p3dConfig->mapType[mapType - 1]->viewType)
+   return p3dConfig->mapType[mapType - 1]->viewType;
  }
- return 1;
+ else
+ {
+  if (-1 != p3dConfig->mapType[mapType - 1]->incompleteType)
+   return p3dConfig->mapType[mapType - 1]->incompleteType;
+ }
+ return w;
 }
 
 void BTGame::setFacing(int f)
 {
  facing = f;
+}
+
+int BTGame::testWallStrength(int x, int y, int direction)
+{
+ if (x < 0)
+  x += levelMap->getXSize();
+ x = x % levelMap->getXSize();
+ if (y < 0)
+  y += levelMap->getYSize();
+ y = y % levelMap->getYSize();
+ IShort w = levelMap->getSquare(y, x).getWall(direction);
+ if (w == 0)
+  return 0;
+ for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
+ {
+  if (BTSPELLTYPE_PHASEDOOR == (*itr)->type)
+  {
+   BTPhaseDoorEffect *phaseDoor = static_cast<BTPhaseDoorEffect*>(*itr);
+   if ((phaseDoor->mapX == x) && (phaseDoor->mapY == y) && (phaseDoor->facing == direction))
+    return 0;
+  }
+ }
+ int mapType = p3dConfig->findMapType(w, true);
+ if (mapType == 0)
+  return 0;
+ if (p3dConfig->mapType[mapType - 1]->invincible)
+  return 2;
+ else
+  return 1;
 }
 
 std::string BTGame::getLastInput() const
@@ -244,6 +411,11 @@ void BTGame::setCounter(int val)
  counter = val;
 }
 
+BTChest &BTGame::getChest()
+{
+ return chest;
+}
+
 BTCombat &BTGame::getCombat()
 {
  return combat;
@@ -259,6 +431,15 @@ bool BTGame::getLocalFlag(int index)
  return local.isSet(index);
 }
 
+int BTGame::getKnowledge(int x, int y)
+{
+ int index = y * levelMap->getXSize() + x;
+ if (knowledge.isSet(index))
+  return BTKNOWLEDGE_YES;
+ else
+  return BTKNOWLEDGE_NO;
+}
+
 bool BTGame::getGlobalFlag(int index)
 {
  return global.isSet(index);
@@ -270,6 +451,15 @@ void BTGame::setLocalFlag(int index, bool value)
   local.set(index);
  else
   local.clear(index);
+}
+
+void BTGame::setKnowledge(int x, int y, bool value)
+{
+ int index = y * levelMap->getXSize() + x;
+ if (value)
+  knowledge.set(index);
+ else
+  knowledge.clear(index);
 }
 
 void BTGame::setGlobalFlag(int index, bool value)
@@ -287,25 +477,53 @@ void BTGame::run(BTDisplay &d)
  {
   d.drawFullScreen(module->title, 5000);
   d.refresh();
-  d.setPsuedo3DConfig(module->wall);
-  d.setWallGraphics(levelMap->getType());
-  unsigned char key = ' ';
-  try
+  d.setPsuedo3DConfig(&p3dConfigList);
+  bool skipGuild = false;
+  if (PHYSFS_exists("savegame.xml"))
   {
-   BTSpecialCommand::Guild.run(d);
+   d.clearText();
+   d.addText("Do you wish to restore your last saved game?");
+   d.addChoice("yY", "Yes");
+   d.addChoice("nN", "No");
+   unsigned int key = d.process();
+   if (('y' == key) || ('Y' == key))
+   {
+    readSaveXML("savegame.xml");
+    skipGuild = true;
+   }
+   d.clearText();
   }
-  catch (const BTSpecialFlipGoForward &)
+  p3dConfig = d.setWallGraphics(levelMap->getType());
+  unsigned char key = ' ';
+  if (!skipGuild)
   {
-   turnAround(d);
-   special = move(d, facing);
+   setKnowledge(xPos, yPos, true);
+   try
+   {
+    BTSpecialCommand::Guild.run(d);
+   }
+   catch (const BTSpecialFlipGoForward &)
+   {
+    turnAround(d);
+    special = move(d, facing);
+   }
   }
   while (true)
   {
    try
    {
+    setKnowledge(xPos, yPos, true);
     nextTurn(d);
     d.drawView();
     d.drawLabel(levelMap->getName());
+    if ((flags.isSet(BTSPECIALFLAG_DARKNESS)) && (hasEffectOfType(BTSPELLTYPE_LIGHT)))
+    {
+     SDL_Delay(500); // pause for bit to show a flash of light.
+     clearEffectsByType(d, BTSPELLTYPE_LIGHT);
+     checkExpiration(d, &combat);
+     d.drawView();
+     d.drawIcons();
+    }
     if (special)
     {
      special = false;
@@ -314,6 +532,7 @@ void BTGame::run(BTDisplay &d)
      if (s >= 0)
       special = runSpecial(d, s);
     }
+    setKnowledge(xPos, yPos, true);
     if ((!special) && (timedSpecial >= 0) && (isExpired(timedExpiration)))
     {
      IShort s = timedSpecial;
@@ -321,16 +540,14 @@ void BTGame::run(BTDisplay &d)
      special = runSpecial(d, s);
      continue;
     }
+    setKnowledge(xPos, yPos, true);
     d.drawView();
     d.drawLabel(levelMap->getName());
     if (!special)
     {
-     if (levelMap->getMonsterChance() >= BTDice(1, 100).roll())
+     if (!hasEffectOfType(BTSPELLTYPE_BLOCKENCOUNTERS))
      {
-      if (!hasEffectOfType(BTSPELLTYPE_BLOCKENCOUNTERS))
-      {
-       d.drawText("Random Encounter");
-      }
+      levelMap->checkRandomEncounter(d);
      }
      key = d.readChar(6000);
      switch (key)
@@ -392,6 +609,20 @@ void BTGame::run(BTDisplay &d)
        cast.run(d);
        break;
       }
+      case 'd':
+      {
+       BTScreenSet drop;
+       drop.open("data/dismiss.xml");
+       drop.run(d);
+       break;
+      }
+      case 'u':
+      {
+       BTScreenSet useItem;
+       useItem.open("data/use.xml");
+       useItem.run(d);
+       break;
+      }
       case 'b':
       {
        BTScreenSet cast;
@@ -404,6 +635,59 @@ void BTGame::run(BTDisplay &d)
        BTScreenSet moveTo;
        moveTo.open("data/moveTo.xml");
        moveTo.run(d);
+       break;
+      }
+      case 's':
+      {
+       BTScreenSet saveGame;
+       saveGame.open("data/savegame.xml");
+       saveGame.run(d);
+       break;
+      }
+      case '?':
+      {
+       int quarter = (gameTime / (module->maxTime / 96)) % 4;
+       int hour = ((gameTime / (module->maxTime / 24)) + 6) % 24 + ((quarter == 3) ? 1 : 0);
+       std::string timeText;
+       if (hour == 0)
+       {
+        timeText = "midnight.";
+       }
+       else if (hour == 12)
+       {
+        timeText = "noon.";
+       }
+       else if (hour < 12)
+       {
+        char tmp[20];
+        sprintf(tmp, "%d a.m.", hour);
+        timeText = tmp;
+       }
+       else
+       {
+        char tmp[20];
+        sprintf(tmp, "%d p.m.", hour - 12);
+        timeText = tmp;
+       }
+       switch (quarter)
+       {
+        case 1:
+         timeText = "quarter after " + timeText;
+         break;
+        case 2:
+         timeText = "half past " + timeText;
+         break;
+        case 3:
+         timeText = "quarter til " + timeText;
+         break;
+        case 0:
+        default:
+         break;
+       }
+       timeText = "The time is " + timeText;
+       d.drawText(timeText.c_str());
+       d.drawView();
+       d.drawMap(false);
        break;
       }
       default:
@@ -429,19 +713,24 @@ void BTGame::run(BTDisplay &d)
  catch (const BTSpecialQuit &)
  {
   clearEffects(d);
+  checkExpiration(d, &combat);
+  d.drawIcons();
  }
+ d.setPsuedo3DConfig(NULL);
 }
 
 bool BTGame::runSpecial(BTDisplay &d, IShort special)
 {
  try
  {
-  levelMap->getSpecial(special)->run(d);
+  BTSpecial* sp = levelMap->getSpecial(special);
+  if (sp)
+   sp->run(d);
  }
  catch (const BTSpecialTeleport &t)
  {
   loadMap(t.map.c_str());
-  d.setWallGraphics(levelMap->getType());
+  p3dConfig = d.setWallGraphics(levelMap->getType());
   xPos = t.x;
   yPos = t.y;
   while (xPos < 0)
@@ -456,6 +745,7 @@ bool BTGame::runSpecial(BTDisplay &d, IShort special)
   yPos = yPos % levelMap->getYSize();
   facing = t.facing;
   d.drawView();
+  flags.clearAll();
   return t.activate;
  }
  catch (const BTSpecialBack &)
@@ -489,18 +779,28 @@ bool BTGame::move(BTDisplay &d, int dir)
     {
      w = 0;
      effect.erase(itr);
-     delete phaseDoor;
      break;
     }
    }
   }
  }
- if (w != 1)
+ bool walk = true;
+ if (w != 0)
+ {
+  int mapType = p3dConfig->findMapType(w, true);
+  if (0 != mapType)
+  {
+   if (!p3dConfig->mapType[mapType - 1]->passable)
+    walk = false;
+  }
+ }
+ if (walk)
  {
   xPos += Psuedo3D::changeXY[dir][0] + levelMap->getXSize();
   xPos = xPos % levelMap->getXSize();
   yPos += Psuedo3D::changeXY[dir][1] + levelMap->getYSize();
   yPos = yPos % levelMap->getYSize();
+  flags.clearAll();
   return true;
  }
  return false;
@@ -538,169 +838,61 @@ void BTGame::clearTimedSpecial()
 void BTGame::addEffect(BTBaseEffect *e)
 {
  if ((BTTIME_COMBAT == e->expiration) || (e->targetsMonsters()))
+ {
   combat.addEffect(e);
+ }
  else
-  effect.push_back(e);
+ {
+  BTEffectGroup::addEffect(e);
+ }
+}
+
+void BTGame::checkExpiration(BTDisplay &d, BTCombat *combatObj /*= NULL*/)
+{
+ combat.checkExpiration(d, &combat);
+ BTEffectGroup::checkExpiration(d, &combat);
 }
 
 void BTGame::clearEffects(BTDisplay &d)
 {
- d.stopMusic(BTMUSICID_ALL);
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); itr = effect.begin())
- {
-  BTBaseEffect *current = *itr;
-  effect.erase(itr);
-  if ((BTTIME_PERMANENT != current->expiration) && (BTTIME_CONTINUOUS != current->expiration))
-   current->finish(d, NULL);
-  delete current;
- }
  combat.clearEffects(d);
- d.drawIcons();
+ BTEffectGroup::clearEffects(d);
 }
 
 void BTGame::clearEffectsByType(BTDisplay &d, int type)
 {
- bool found = true;
- std::vector<int> musicIds;
- while (found)
- {
-  found = false;
-  for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
-  {
-   if ((*itr)->type == type)
-   {
-    BTBaseEffect *current = *itr;
-    effect.erase(itr);
-    bool musicFound = false;
-    for (std::vector<int>::iterator itrId = musicIds.begin(); itrId != musicIds.end(); ++itrId)
-    {
-     if (*itrId == current->musicId)
-      musicFound = true;
-    }
-    if (!musicFound)
-     musicIds.push_back(current->musicId);
-    if ((BTTIME_PERMANENT != current->expiration) && (BTTIME_CONTINUOUS != current->expiration))
-     current->finish(d, NULL);
-    delete current;
-    found = true;
-    break;
-   }
-  }
- }
- checkMusic(d, musicIds);
- d.drawIcons();
+ combat.clearEffectsByType(d, type);
+ BTEffectGroup::clearEffectsByType(d, type);
 }
 
-void BTGame::clearEffectsBySource(BTDisplay &d, bool song)
+void BTGame::clearEffectsBySource(BTDisplay &d, bool song, int group /*= BTTARGET_NONE*/, int target /*= BTTARGET_INDIVIDUAL*/)
 {
- if (song)
-  d.stopMusic(BTMUSICID_ALL);
- bool bFound = true;
- while (bFound)
- {
-  bFound = false;
-  for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
-  {
-   if (((song == true) && ((*itr)->singer != BTTARGET_NOSINGER)) || ((song == false) && ((*itr)->singer == BTTARGET_NOSINGER)))
-   {
-    BTBaseEffect *current = *itr;
-    effect.erase(itr);
-    if ((BTTIME_PERMANENT != current->expiration) && (BTTIME_CONTINUOUS != current->expiration))
-     current->finish(d, NULL);
-    delete current;
-    bFound = true;
-    break;
-   }
-  }
- }
- d.drawIcons();
-}
-
-void BTGame::clearMapEffects()
-{
- bool bFound = true;
- while (bFound)
- {
-  bFound = false;
-  for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
-  {
-   if (BTTIME_MAP == (*itr)->expiration)
-   {
-    BTBaseEffect *current = *itr;
-    effect.erase(itr);
-//    current->finish(d, NULL);
-    delete current;
-    bFound = true;
-    break;
-   }
-  }
- }
+ combat.clearEffectsBySource(d, song, group, target);
+ BTEffectGroup::clearEffectsBySource(d, song, group, target);
 }
 
 bool BTGame::hasEffectOfType(int type, int group /*= BTTARGET_NONE*/, int target /*= BTTARGET_INDIVIDUAL*/)
 {
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
- {
-  if ((*itr)->type == type)
-  {
-   if (group != BTTARGET_NONE)
-   {
-    if ((*itr)->targets(group, target))
-     return true;
-    if ((*itr)->targets(group, BTTARGET_INDIVIDUAL))
-     return true;
-    if ((group != BTTARGET_PARTY) && ((*itr)->targets(BTTARGET_ALLMONSTERS, BTTARGET_INDIVIDUAL)))
-     return true;
-   }
-   else
-    return true;
-  }
- }
+ if (BTEffectGroup::hasEffectOfType(type, group, target))
+  return true;
  return combat.hasEffectOfType(type, group, target);
 }
 
 void BTGame::addPlayer(BTDisplay &d, int who)
 {
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
- {
-  if ((*itr)->targets(BTTARGET_PARTY, BTTARGET_INDIVIDUAL))
-  {
-   (*itr)->apply(d, NULL, BTTARGET_PARTY, who);
-  }
- }
+ BTEffectGroup::addPlayer(d, who);
  combat.addPlayer(d, who);
 }
 
 void BTGame::movedPlayer(BTDisplay &d, int who, int where)
 {
- if (where == BTPARTY_REMOVE)
- {
-  for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end();)
-  {
-   if ((*itr)->targets(BTTARGET_PARTY, who))
-   {
-    BTBaseEffect *current = *itr;
-    itr = effect.erase(itr);
-    int size = effect.size();
-    if ((BTTIME_PERMANENT != current->expiration) && (BTTIME_CONTINUOUS != current->expiration))
-     current->finish(d, NULL);
-    delete current;
-    if (size != effect.size())
-     itr = effect.begin();
-   }
-   else
-    ++itr;
-  }
- }
- // Must finish combat spells before fixing targets
- combat.movedPlayer(d, who, where);
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
- {
-  if (BTPARTY_REMOVE == where)
-   (*itr)->remove(&combat, BTTARGET_PARTY, where);
-  else
-   (*itr)->move(BTTARGET_PARTY, who, where);
- }
+ movedPlayer(d, &combat, who, where);
+}
+
+void BTGame::movedPlayer(BTDisplay &d, BTCombat *combatObj, int who, int where)
+{
+ combatObj->movedPlayer(d, combatObj, who, where);
+ BTEffectGroup::movedPlayer(d, combatObj, who, where);
 }
 
 unsigned int BTGame::getExpiration(unsigned int duration)
@@ -731,39 +923,8 @@ bool BTGame::isDaytime()
 void BTGame::nextTurn(BTDisplay &d, BTCombat *combat /*= NULL*/)
 {
  ++gameTime;
- std::vector<int> musicIds;
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end();)
- {
-  if ((*itr)->isExpired(this))
-  {
-   BTBaseEffect *current = *itr;
-   itr = effect.erase(itr);
-   bool musicFound = false;
-   for (std::vector<int>::iterator itrId = musicIds.begin(); itrId != musicIds.end(); ++itrId)
-   {
-    if (*itrId == current->musicId)
-     musicFound = true;
-   }
-   if (!musicFound)
-    musicIds.push_back(current->musicId);
-   int size = effect.size();
-   current->finish(d, combat);
-   delete current;
-   if (size != effect.size())
-    itr = effect.begin();
-  }
-  else
-   ++itr;
- }
- checkMusic(d, musicIds);
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end();)
- {
-  if ((*itr)->first)
-   (*itr)->first = false;
-  else if (BTTIME_PERMANENT != (*itr)->expiration)
-   (*itr)->maintain(d, combat);
-  ++itr;
- }
+ checkExpiration(d, combat);
+ maintain(d, combat);
  bool spRegen = false;
  if ((0 == gameTime % BTSP_REGEN) && (isDaytime()) && (0 < levelMap->getLight()))
   spRegen = true;
@@ -791,34 +952,96 @@ void BTGame::resetTime()
  gameTime = 0;
 }
 
-int BTGame::getDelay() const
+int *BTGame::getDelay()
 {
- return delay;
+ return &delay;
+}
+
+void BTGame::save()
+{
+ BTPc::writeXML("roster.xml", getGroup(), getRoster());
+ BTShop::writeXML("shops.xml", shops);
+}
+
+void BTGame::serialize(ObjectSerializer *s, BTGroup &curParty, std::string &startMap)
+{
+ s->add("party", &getGroup(), &BTGroup::create);
+ s->add("pc", &getRoster(), &BTPc::create);
+ s->add("startMap", &startMap);
+ s->add("xPos", &xPos);
+ s->add("yPos", &yPos);
+ s->add("facing", &facing);
+ s->add("curParty", &curParty);
+ s->add("counter", &counter);
+ s->add("gameTime", &gameTime);
+ s->add("global", &global, NULL);
+ s->add("local", &local, NULL);
+ s->add("knowledge", &knowledge, NULL);
+ s->add("timedExpiration", &timedExpiration);
+ s->add("timedSpecial", &timedSpecial);
+ s->add("baseeffect", typeid(BTBaseEffect).name(), &effect, &BTBaseEffect::create);
+ s->add("targetedeffect", typeid(BTTargetedEffect).name(), &effect, &BTTargetedEffect::create);
+ s->add("resistedeffect", typeid(BTResistedEffect).name(), &effect, &BTResistedEffect::create);
+ s->add("attackeffect", typeid(BTAttackEffect).name(), &effect, &BTAttackEffect::create);
+ s->add("curestatuseffect", typeid(BTCureStatusEffect).name(), &effect, &BTCureStatusEffect::create);
+ s->add("healeffect", typeid(BTHealEffect).name(), &effect, &BTHealEffect::create);
+ s->add("summonmonstereffect", typeid(BTSummonMonsterEffect).name(), &effect, &BTSummonMonsterEffect::create);
+ s->add("summonillusioneffect", typeid(BTSummonIllusionEffect).name(), &effect, &BTSummonIllusionEffect::create);
+ s->add("dispellillusioneffect", typeid(BTDispellIllusionEffect).name(), &effect, &BTDispellIllusionEffect::create);
+ s->add("armorbonuseffect", typeid(BTArmorBonusEffect).name(), &effect, &BTArmorBonusEffect::create);
+ s->add("hitbonuseffect", typeid(BTHitBonusEffect).name(), &effect, &BTHitBonusEffect::create);
+ s->add("resurrecteffect", typeid(BTResurrectEffect).name(), &effect, &BTResurrectEffect::create);
+ s->add("dispellmagiceffect", typeid(BTDispellMagicEffect).name(), &effect, &BTDispellMagicEffect::create);
+ s->add("phasedooreffect", typeid(BTPhaseDoorEffect).name(), &effect, &BTPhaseDoorEffect::create);
+ s->add("regenskilleffect", typeid(BTRegenSkillEffect).name(), &effect, &BTRegenSkillEffect::create);
+ s->add("pusheffect", typeid(BTPushEffect).name(), &effect, &BTPushEffect::create);
+ s->add("attackratebonuseffect", typeid(BTAttackRateBonusEffect).name(), &effect, &BTAttackRateBonusEffect::create);
+ s->add("regenmanaeffect", typeid(BTRegenManaEffect).name(), &effect, &BTRegenManaEffect::create);
+ s->add("savebonuseffect", typeid(BTSaveBonusEffect).name(), &effect, &BTSaveBonusEffect::create);
+ s->add("scrysighteffect", typeid(BTScrySightEffect).name(), &effect, &BTScrySightEffect::create);
+ s->add("spellbindeffect", typeid(BTSpellBindEffect).name(), &effect, &BTSpellBindEffect::create);
+ s->add("lighteffect", typeid(BTLightEffect).name(), &effect, &BTLightEffect::create);
+}
+
+void BTGame::readSaveXML(const char *filename)
+{
+ std::string startMap;
+ BTGroup curParty;
+ XMLSerializer parser;
+ party.erase(party.begin(), party.end());
+ group.erase(group.begin(), group.end());
+ roster.erase(roster.begin(), roster.end());
+ serialize(&parser, curParty, startMap);
+ parser.parse(filename, true);
+ for (int i = 0; i < getRoster().size(); ++i)
+  getRoster()[i]->updateSkills();
+ loadMap(startMap.c_str(), false);
+ for (int i = 0; i < curParty.member.size(); ++i)
+ {
+  for (int k = 0; k < roster.size(); ++k)
+  {
+   if (0 == strcmp(roster[k]->name, curParty.member[i].c_str()))
+   {
+    party.push_back(roster[k]);
+   }
+  }
+ }
+}
+
+void BTGame::writeSaveXML(const char *filename)
+{
+ std::string startMap = levelMap->getFilename();
+ BTGroup curParty;
+ curParty.name = "Current Party";
+ for (int i = 0; i < party.size(); ++i)
+  curParty.member.push_back(party[i]->name);
+ XMLSerializer parser;
+ serialize(&parser, curParty, startMap);
+ parser.write(filename, true);
 }
 
 BTGame *BTGame::getGame()
 {
  return game;
-}
-
-void BTGame::checkMusic(BTDisplay &d, std::vector<int> &musicIds)
-{
- for (XMLVector<BTBaseEffect*>::iterator itr = effect.begin(); itr != effect.end(); ++itr)
- {
-  if ((*itr)->musicId != BTMUSICID_NONE)
-  {
-   for (std::vector<int>::iterator itrId = musicIds.begin(); itrId != musicIds.end(); ++itrId)
-   {
-    if (*itrId == (*itr)->musicId)
-    {
-     musicIds.erase(itrId);
-    }
-   }
-  }
- }
- for (std::vector<int>::iterator itrId = musicIds.begin(); itrId != musicIds.end(); ++itrId)
- {
-  d.stopMusic(*itrId);
- }
 }
 

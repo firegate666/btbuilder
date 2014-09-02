@@ -6,33 +6,54 @@
 \*-------------------------------------------------------------------------*/
 
 #include "skill.h"
+#include "game.h"
 #include <stdio.h>
 
 char *use[] =
 {
  "autocombat",
+ "autocombat-melee",
+ "autocombat-ranged",
  "combat",
  "any",
  "magic",
  "special"
 };
-ArrayLookup useLookup(5, use);
+ArrayLookup useLookup(7, use);
 ArrayLookup effectLookup(BT_MONSTEREXTRADAMAGE, extraDamage);
 char *specialSkill[] =
 {
  "disarm",
  "hide",
- "song"
+ "song",
+ "barehands",
+ "run"
 };
-ArrayLookup specialLookup(3, specialSkill);
+ArrayLookup specialLookup(5, specialSkill);
+
+BTDice *BTSkill::getRoll(int value)
+{
+ if (roll.size() == 0)
+  return NULL;
+ else if (roll.size() > value)
+  return roll[value - 1];
+ else
+  return roll[roll.size() - 1];
+}
 
 void BTSkill::serialize(ObjectSerializer* s)
 {
  s->add("name", &name);
  s->add("use", &use, NULL, &useLookup);
  s->add("effect", &effect, NULL, &effectLookup);
+ s->add("after", &after, NULL, &BTCore::getCore()->getSkillList());
  s->add("limited", &limited);
  s->add("special", &special, NULL, &specialLookup);
+ s->add("roll", &roll, &BTDice::create);
+ s->add("defaultDifficulty", &defaultDifficulty);
+ s->add("common", &common);
+ s->add("success", &success);
+ s->add("failure", &failure);
 }
 
 void BTSkill::readXML(const char *filename, XMLVector<BTSkill*> &skill)
@@ -57,3 +78,9 @@ int BTSkillList::getIndex(std::string name)
    return i;
  return -1;
 }
+
+size_t BTSkillList::size()
+{
+ return XMLVector<BTSkill*>::size();
+}
+

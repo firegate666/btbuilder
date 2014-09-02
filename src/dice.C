@@ -8,11 +8,12 @@
 #include "dice.h"
 
 #include <ctime>
+#include <sstream>
 
 #define DICE_NUMBERMASK 0x1F
 #define DICE_TYPEMASK   0xE0
 
-IShort BTDice::validType[DICE_VALIDTYPES] = {2, 4, 6, 8, 10, 12, 20, 100, 5};
+IShort BTDice::validType[DICE_VALIDTYPES] = {2, 4, 6, 8, 10, 12, 20, 100};
 base_generator_type BTDice::generator(42u);
 
 BTDice::BTDice(BinaryReadFile &f)
@@ -30,9 +31,26 @@ BTDice::BTDice()
 {
 }
 
+std::string BTDice::createString()
+{
+ std::ostringstream stream;
+ if (number != 0)
+  stream << number << "d" << type;
+ if (modifier < 0)
+  stream << modifier;
+ else if (modifier > 0)
+  stream << "+" << modifier;
+ return stream.str();
+}
+
 int BTDice::getMax() const
 {
  return modifier + type * number;
+}
+
+int BTDice::getMin() const
+{
+ return modifier + number;
 }
 
 int BTDice::getModifier() const
@@ -61,11 +79,14 @@ void BTDice::read(BinaryReadFile &f)
 
 int BTDice::roll() const
 {
- boost::uniform_int<> ran_dist(1, type);
- boost::variate_generator<base_generator_type&, boost::uniform_int<> > ran(generator, ran_dist);
  int r = modifier;
- for (int i = 0; i < number; ++i)
-  r += ran();
+ if (type > 0)
+ {
+  boost::uniform_int<> ran_dist(1, type);
+  boost::variate_generator<base_generator_type&, boost::uniform_int<> > ran(generator, ran_dist);
+  for (int i = 0; i < number; ++i)
+   r += ran();
+ }
  return r;
 }
 
@@ -76,6 +97,11 @@ void BTDice::serialize(ObjectSerializer* s)
  s->add("m", &modifier);
 }
 
+void BTDice::setModifier(IShort val)
+{
+ modifier = val;
+}
+
 void BTDice::setNumber(IShort val)
 {
  number = val;
@@ -83,16 +109,7 @@ void BTDice::setNumber(IShort val)
 
 void BTDice::setType(IShort val)
 {
- int i;
- for (i = 0; i < DICE_VALIDTYPES; i++)
- {
-  if (val == validType[i])
-  {
-   type = val;
-   return;
-  }
- }
- // Error tried to set an invalid type
+ type = val;
 }
 
 void BTDice::write(BinaryWriteFile &f)
@@ -106,7 +123,7 @@ void BTDice::write(BinaryWriteFile &f)
    break;
   }
  }
- b = (b << 5) + number;
+ b = (b << 5) + (number - 1);
  f.writeUByte(b);
 }
 

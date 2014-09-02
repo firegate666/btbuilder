@@ -51,6 +51,20 @@ void BitField::clear(int index)
  }
 }
 
+int BitField::count(int start /*= 0*/, int end /*= -1*/) const
+{
+ if (end == -1)
+  end = getMaxSet();
+ int count = 0;
+ while (start <= end)
+ {
+  if (isSet(start))
+   ++count;
+  ++start;
+ }
+ return count;
+}
+
 int BitField::getMaxSet() const
 {
  if (bits)
@@ -258,6 +272,20 @@ void BitField::set(int index)
  }
 }
 
+bool BitField::toggle(int index)
+{
+ if (isSet(index))
+ {
+  clear(index);
+  return false;
+ }
+ else
+ {
+  set(index);
+  return true;
+ }
+}
+
 void BitField::expand(int newSize)
 {
  if (bits)
@@ -308,3 +336,58 @@ BitField BitField::operator&(const BitField &other) const
  }
  return ans;
 }
+
+BitField &BitField::operator|=(const BitField &other)
+{
+ if (bits)
+ {
+  if (other.bits)
+  {
+   if (other.size > size)
+    expand(other.size);
+   for (int i = 0; i < size; ++i)
+    bits[i] |= other.bits[i];
+  }
+  else
+   bits[0] |= other.size;
+ }
+ else if (other.bits)
+ {
+  expand(other.size);
+  for (int i = 0; i < size; ++i)
+   bits[i] |= other.bits[i];
+ }
+ else
+ {
+  size |= other.size;
+ }
+ return *this;
+}
+
+bool BitField::operator==(const BitField &other)
+{
+ int len = getMaxSet();
+ if (other.getMaxSet() != len)
+  return false;
+ for (; len > 0; --len)
+  if (isSet(len - 1) != other.isSet(len - 1))
+   return false;
+ return true;
+}
+
+BitField &BitField::operator=(const BitField &other)
+{
+ if (this != &other)
+ {
+  clearAll();
+  size = other.size;
+  if (other.bits)
+  {
+   bits = new unsigned int[size];
+   for (int i = 0; i < size; ++i)
+    bits[i] = other.bits[i];
+  }
+ }
+ return *this;
+}
+

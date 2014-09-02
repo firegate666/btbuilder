@@ -13,6 +13,23 @@
 #include "statusinfo.h"
 #include "btconst.h"
 
+class BTDisplayExpanded : public XMLObject
+{
+ public:
+  BTDisplayExpanded();
+  ~BTDisplayExpanded();
+
+  virtual void serialize(ObjectSerializer* s);
+
+  static XMLObject *create(const XML_Char *name, const XML_Char **atts) { return new BTDisplayExpanded; }
+
+ public:
+  int xMult, yMult;
+  std::string directory;
+  char *font;
+  int fontsize;
+};
+
 class BTDisplayConfig : public XMLObject
 {
  public:
@@ -21,16 +38,24 @@ class BTDisplayConfig : public XMLObject
 
   virtual void serialize(ObjectSerializer* s);
 
+  BTDisplayExpanded *findExpanded(int xMult, int yMult);
+
  public:
   int width, height;
+  XMLVector<BTDisplayExpanded*> expanded;
   int x3d, y3d;
   SerialRect label;
   SerialRect text;
   SerialRect status[BT_PARTYSIZE];
   char *background;
   char *font;
+  int fontsize;
   XMLVector<BTStatusInfo*> statusInfo;
   XMLVector<BTIcon*> icon;
+  int xMap, yMap;
+  int widthMap, heightMap;
+  int mapDisplayMode;
+  bool centerMap;
 };
 
 #endif

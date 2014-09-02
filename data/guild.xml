@@ -7,7 +7,7 @@
 		<line>Thou art in the Guild of Adventurers.</line>
 		<choice keys="aA" screen="2" >Add member</choice>
 		<choice keys="rR" action="ensureParty" screen="3" >Remove member</choice>
-		<choice keys="cC" action="create" screen="5" >Create a member</choice>
+		<choice keys="cC" action="create" screen="12" >Create a member</choice>
 		<choice keys="sS" action="ensureParty" screen="9" >Save party</choice>
 		<choice keys="qQ" screen="4" >Quit game</choice>
 		<choice keys="eE" action="exitAndSave" >Exit the guild</choice>
@@ -31,7 +31,7 @@
 		<line>Select a race for your new character:</line>
 		<line />
 		<selectRace action="setRace" screen="6" />
-		<choice keys="cC" screen="1" align="center">(CANCEL)</choice>
+		<choice keys="cC" screen="12" align="center">(CANCEL)</choice>
 	</screen>
 	<screen number="6">
 		<line><col>St: <stat number="1" /></col><col>IQ: <stat number="2" /></col></line>
@@ -63,10 +63,16 @@
 		<choice keys="yY" action="removeRoster" screen="8" >Yes</choice>
 		<choice keys="nN" screen="8" >No</choice>
         </screen>
+        <screen number="12">
+		<line>Do you wish your character to be</line>
+		<choice keys="mM" action="setGender" screen="5" >Male or</choice>
+		<choice keys="fF" action="setGender" screen="5" >Female?</choice>
+        </screen>
 	<error type="dead">You must have a live party to enter the city.</error>
 	<error type="noparty" screen="1">The party is empty!</error>
 	<error type="noroster">No adventurers available.</error>
 	<error type="inparty"><name /> is already in the party.</error>
 	<error type="exists" screen="7">There is already a person by that name.</error>
+	<error type="existsparty" screen="9">There is already a party by that name.</error>
 	<error type="fullparty">Party is full.</error>
 </screenset>

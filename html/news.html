@@ -9,7 +9,7 @@
 <h1>Bt Builder: News</h1>
 </center></p>
 
-<p><center><a href="index.html">Main</a> - News - <a href="vs.html">Bt Builder vs. BTCS</a> - <a href="maillist.html">Mailing List</a></center></p>
+<p><center><a href="index.html">Main</a> - News - <a href="vs.html">Bt Builder vs. BTCS</a> - <a href="edit.html">Editor</a> - <a href="maillist.html">Mailing List</a> - <a href="https://github.com/dulsi/btbuilder">GitHub</a></center></p>
 
 <hr>
 
@@ -28,6 +28,178 @@ src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
 </center></p>
 
 <p><h2>News</h2></p>
+
+<p>Jul 21, 2014: Bt Builder 0.4.7 released. Modified spells to support
+multiple effects. Spell editor had to be redesigned. City tiles have been
+updated.</p>
+
+<p>Jun 17, 2014: Bt Builder 0.4.6 released. Fixed a crash bug when finding
+traps and trying to cast spells with a non-caster. Shield icon is only
+displayed for party effects. It still displays for armor class penalty spells
+that affect everyone.</p>
+
+<p>May 9, 2014: Bt Builder 0.4.5 released. Added copy functionality to
+monsters, items and spells. Some more images were added. Monsters and spells
+are sorted when selecting one to edit. Unfortunately when you need to select
+one for some other reason like summon monster, sorting is not applied yet.
+Trade gold implemented. Monster names displayed when casting a spell on them.
+You can now save a game. You will be asked to if you want to restore when you
+load the module. Currently "clear special" and "set special" effects are not
+saved. Music is not restored but the effect of the bard song is.
+
+<p>Apr 14, 2014: Bt Builder 0.4.4 released. More images from opengameart.org
+added. Allow the user to select a map file by name on teleport special
+commands or type in a new file name if the file doesn't currently exist.
+Replace goto line number with goto and labels. Old files are automatically
+upgraded. Pressing 'c' when select a special will make a copy and bring up the
+editor for the copy.</p>
+
+<p>Mar 24, 2014: Bt Builder 0.4.3 released. All functionality found in Bard's
+Tale Construction Set now available. Most images have been removed from the
+release due a license conflict. Some images from opengameart.org have been
+added. Editing a picture for a monster or a draw picture special command now
+displays the image. The old images are available for download if you wish to
+continue using them.</p>
+
+<p>Mar 6, 2014: Bt Builder 0.4.2 released. Chance of encounters can be edited
+on the map preferences screen. Crashing when summoning illusions has been
+fixed. Archmage can no longer change class into archmage. The Builder City
+module has more events in it. Builder City 2 has not been updated.</p>
+
+<p>Feb 14, 2014: Bt Builder 0.4.1 released. Fixed a bug where a rogue would
+stay hidden if they were hidden at the end of a combat. Implemented altering
+the speed of text in combat with the '+' and '-' keys. Identify is now
+available at the shop. Added some validity checks to loading the walls.xml so
+that the user is alerted to problems with the file.</p>
+
+<p>Jan 15, 2014: Bt Builder 0.4.0 released. Fixed a bug that caused the old
+BTCS formats to not save properly. Running is no longer automatic. Combat
+actions can be edited in the monster editor although it is not very user
+friendly.</p>
+
+<p>Dec 26, 2013: Bt Builder 0.3.19 released. Fixed a bug that could crash the
+game when using the monk. Updated the images. Reimplemented initiative to take
+dexterity and luck into account.</p>
+
+<p>Oct 25, 2013: Bt Builder 0.3.18 released. Fix a bug for displaying walls
+when wrapping to other side of the map. Added the ability to specify xp for
+monsters. Modified string editing in the special editor to support line
+wrapping.</p>
+
+<p>Oct 23, 2013: Bt Builder 0.3.17 released. Fix a bug that causes Bt Builder
+to crash when editing special commands on occassion. Fixed the delete key in
+the special editor under Windows. New main screen with information on using
+the editor added. Bt Builder now returns to the main screen after editing or
+playing a module instead of exiting. Added a levitation spell. It doesn't do
+anything by itself. Added new conditional "$E is active". It determines if a
+spell effect is active. With this conditional you can have places that allow
+you to levitate up.</p>
+
+<p>Oct 22, 2013: Bt Builder 0.3.16 released. Fix a bug that causes Bt Builder
+to crash when editing some monsters or creating new ones. Add the rest of
+the fields to the spell editor.</p>
+
+<p>Oct 21, 2013: Bt Builder 0.3.15 released. A primitive item and spell editor
+has been added. The item editor allows you to edit everything but isn't very
+user friendly. The spell editor is more of a work in progress.</p>
+
+<p>Oct 14, 2013: Bt Builder 0.3.14 released. Fixed a bug with page down on lists
+that are less than a full page. Bt Builder now tries to load .xml files in
+preference to .MAP files. If a .xml and .MAP file have the same prefix, the map
+editor will only display the .xml file. The map editor no longer saves a broken
+.MAP file if it determines that the map has features that are not supported in
+that format. A very primitive monster editor has been added. It doesn't allow
+you to edit all the fields yet.</p>
+
+<p>Oct 7, 2013: Bt Builder 0.3.13 released. You can now add new specials to
+a map. Baylor's Spell Bind is available for Bt Builder specific modules. It
+only works on a single creature at the moment. The effect only works when
+specified as a single target. Eventually it will be enhanced to work on a
+group. It only has an effect at Start. Run and End effects are nothing.</p>
+
+<p>Apr 15, 2013: Bt Builder 0.3.12 released. A primative special editor is
+implemented. See the <a href="edit.html">editor page</a> for more information.
+Bt Builder now include a spec file for easily building an rpm for Fedora. Page
+up and down implemented on select lists.</p>
+
+<p>Oct 29, 2012: Bt Builder 0.3.11 released. Restore picture and label after
+a combat during a special. Fix map resizing to not leave one way walls.
+Explain how to use map editor in readme. Animated spell icons. Fixed some
+spell damage text to not end with "and". Allow a monster to not be found in
+random encounters. Fixed missing files from map editor list. Removed some non
+map files for map editor list. Implemented play sound special. Fixed animation
+timing. Darkness zone stops new lights but allows a flash of light unlike BTCS
+implementation. Added light level in map files. Support for multiple groups of
+monsters in random encounters. Higher resolution graphics for lots of things
+added.</p>
+
+<p>Oct 14, 2012: Bt Builder 0.3.10 released. Use 'e' on a module to load
+primitive map editor.</p>
+
+<p>Oct 13, 2012: Bt Builder 0.3.9 released. Added some 640x400 images. Added
+new wilderness graphics. Added a primitive map editor. The map editor only
+edits the walls and allows placement of specials. Creating specials can't be
+done at the moment. It allows resizing a map but walls at the edges are not
+corrected so they may be only one way. It can save the BTCS map file format
+if no Bt Builder only features are used.</p>
+
+<p>Oct 7, 2012: Bt Builder 0.3.8 released. Fixed the sample game to allow you
+to talk to the queen after defeating Dral. Added the ability to switch to
+full screen by pressing F12. Modified image loading code to support higher
+resolution but fallback to lower quality image if the higher resolution
+image is not available.</p>
+
+<p>Oct 5, 2012: Bt Builder 0.3.7 released. Hunter's critical hits and thief's
+sneak attack now only work with melee weapons. Dispell illusion and dispell
+magic implemented. This required heavy changes to spell expiration. Animated
+spell icons are in the build but they do not animate in the game yet. Lots
+of new wall tiles are available. Modified the sample games a bit.</p>
+
+<p>Sep 28, 2012: Bt Builder 0.3.6 released. Hide in shadows now critically
+hits. It also informs you that you succeeded or failed. Monsters and
+characters have gender. Character creation allows you to specify the
+character's gender. Added music for the safety song. Made a second demo game.
+The second demo is currently the same as the first except it allows 12 items
+per character, uses xml files for many files and has proper plural names for
+monsters.</p>
+
+<p>Sep 25, 2012: Bt Builder 0.3.5 released. Hide in shadows is partially
+working. It doesn't critically hit yet. The xml monster files now support a
+plural name instead of just adding "(s)". Various bug fixes and compile fix
+for new libpng. New slot images. Support for a larger number of item slots.</p>
+
+<p>Sep 18, 2012: Bt Builder 0.3.4 released. Rate of attacks not increased
+properly. Buying spell levels doesn't always work properly. XP needed didn't
+display when you don't have enough XP to advance. Increase monk's bare hands
+damage as they advance in level.</p>
+
+<p>Sep 17, 2012: Bt Builder 0.3.3 released. Shops can now have different
+inventory than the first nine items. Items sold to the shop are available
+for purchase. Silence zones do not allow new songs. Support for walls that
+are immune to phase door. Fixed quitting under windows. Clicking on the close
+button will also work now although it doesn't warn you about losing your
+progress like it does when you use 'q' to quit. Lots of new graphics.</p>
+
+<p>Aug 25, 2012: Bt Builder 0.3.2 released. Implemented the rest of the
+special attacks for monsters. Implemented item-zot. Fixed a bug in writing xml
+files under windows. Fixed a bug that didn't cause all the bitfield
+information to be written to the xml file. Fully implemented anti-magic zones.
+Made it possible to have walls unaffected by phase door and removed the
+hard-coded handling of secret doors in the binaries.</p>
+
+<p>Aug 7, 2012: Bt Builder 0.3.1 released. Implemented aging to weapons and
+monsters. Implemented point phaze. Display number of arrows and thrown weapons
+left. Do not consume items when charges used up except for arrows and thrown
+weapons. Implemented scry sight spell. Implemented question mark command.
+Allow output of btbuilder xml files to a standard output.</p>
+
+<p>Jul 18, 2012: Bt Builder 0.3.0 released. Implemented age and youth spells.
+Implemented bows and thrown weapons.</p>
+
+<p>Jun 28, 2012: Bt Builder 0.2.19 released. Added images beyond BTCS image
+numbers. Implemented chest special and various trap disarming methods.</p>
+
+<p>May 25, 2012: Switched to using github.</p>
 
 <p>Nov 24, 2010: Bt Builder 0.2.18 released.  All bard songs are now implemented.</p>
 

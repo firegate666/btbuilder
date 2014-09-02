@@ -36,10 +36,13 @@
 #define WALL_EDGE_RIGHT5_2 22
 #define WALL_EDGE_RIGHT5_3 23
 
+#define CARDINAL_DIRECTIONS 4
+
 class Psuedo3DWallType : public XMLObject
 {
  public:
   Psuedo3DWallType()
+   : type(-1)
   {
    for (int i = 0; i < WALL_DIRECTIONS; ++i)
     walls[i] = 0;
@@ -61,12 +64,44 @@ class Psuedo3DWallType : public XMLObject
   char *walls[WALL_DIRECTIONS];
 };
 
+class Psuedo3DMapType : public XMLObject
+{
+ public:
+  Psuedo3DMapType()
+   : type(-1), incompleteType(-1), viewType(-1), passable(false), invincible(false)
+  {
+   for (int i = 0; i < CARDINAL_DIRECTIONS; ++i)
+    mapWalls[i] = 0;
+  }
+
+  ~Psuedo3DMapType()
+  {
+   for (int i = 0; i < CARDINAL_DIRECTIONS; ++i)
+     if (mapWalls[i])
+      delete [] mapWalls[i];
+  }
+
+  virtual void serialize(ObjectSerializer* s);
+
+  static XMLObject *create(const XML_Char *name, const XML_Char **atts) { return new Psuedo3DMapType; }
+
+  int type;
+  std::string name;
+  int incompleteType;
+  int viewType;
+  bool passable;
+  bool invincible;
+  char *mapWalls[CARDINAL_DIRECTIONS];
+};
+
 class Psuedo3DConfig : public XMLObject
 {
  public:
   Psuedo3DConfig()
-   : height(0), width(0), background(0)
+   : height(0), width(0), background(0), mapSpecial(0), mapUnknown(0)
   {
+   for (int i = 0; i < CARDINAL_DIRECTIONS; ++i)
+    mapArrows[i] = 0;
   }
 
   ~Psuedo3DConfig()
@@ -76,15 +111,31 @@ class Psuedo3DConfig : public XMLObject
   }
 
   int findWallType(int type, int position);
+  int findMapType(int type, bool complete);
   virtual void serialize(ObjectSerializer* s);
+  bool validate();
 
   static XMLObject *create(const XML_Char *name, const XML_Char **atts) { return new Psuedo3DConfig; }
   static void readXML(const char *filename, XMLVector<Psuedo3DConfig*> &cfg);
 
+  std::string name;
   int height, width;
   int divide;
   char *background;
   XMLVector<Psuedo3DWallType*> wallType;
+  int mapHeight, mapWidth;
+  XMLVector<Psuedo3DMapType*> mapType;
+  char *mapSpecial;
+  char *mapUnknown;
+  char *mapArrows[CARDINAL_DIRECTIONS];
+};
+
+class Psuedo3DConfigList : public ValueLookup, public XMLVector<Psuedo3DConfig*>
+{
+ public:
+  virtual std::string getName(int index);
+  virtual int getIndex(std::string name);
+  virtual size_t size();
 };
 
 #endif

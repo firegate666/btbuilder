@@ -9,7 +9,7 @@
 <h1>Bt Builder vs. BTCS</h1>
 </center></p>
 
-<p><center><a href="index.html">Main</a> - <a href="news.html">News</a> - Bt Builder vs. BTCS - <a href="maillist.html">Mailing List</a></center></p>
+<p><center><a href="index.html">Main</a> - <a href="news.html">News</a> - Bt Builder vs. BTCS - <a href="edit.html">Editor</a> - <a href="maillist.html">Mailing List</a> - <a href="https://github.com/dulsi/btbuilder">GitHub</a></center></p>
 
 <hr>
 
@@ -39,11 +39,12 @@ above 14.  If someone knows the correct range or creates a BTCS character
 that is not in this range, please send me an
 <a href="mailto:dulsi@identicalsoftware.com">email</a>.</p>
 
-<p>After select a race in BTCS, ability scores are determined and shown
-until a key is pressed.  It then lists the available classes with the
-abilities possibly scrolling offscreen.  The previous Bard's Tale games
-would list the ability scores and available classes on a single screen.
-Bt Builder uses the older display.</p>
+<p>The first question is what gender you wish to be like BT3 which is
+followed by race selection. After select a race in BTCS, ability scores are
+determined and shown until a key is pressed. It then lists the available
+classes with the abilities possibly scrolling offscreen. The previous Bard's
+Tale games would list the ability scores and available classes on a single
+screen. Bt Builder uses the older display.</p>
 
 <p><h2>Adventurer's Guild</h2></p>
 
@@ -62,9 +63,12 @@ you select an item by pressing it's number, it displays the price and allow
 you to accept or decline.  The older Bard's Tale games displayed the list
 of item with price.  Since they allowed more than nine items in the shop
 they allow you to scroll up and down the list to select one.  Bt Builder
-mimics the older Bard's Tale games.  At this time the shop is still limited
-to the nine items but that will likely be removed later.  Similar change
-has been made to the selling interface.</p>
+mimics the older Bard's Tale games.  Similar change has been made to the
+selling interface.</p>
+
+<p>By default the shop has the first nine items in it in unlimited
+numbers. This can be customized for games built with Bt Builder. The shop
+does keep anything sold to it just like the older Bard's Tale games.</p>
 
 <p><h2>Combat</h2></p>
 
@@ -73,6 +77,26 @@ attack.  Instead it is randomly determined based on what monsters are
 within range.  Previous Bard's Tales allowed you to choose who to attack.
 Our implementation is like the older games with the exception that it
 will randomly find an opponent if the group you specified has been killed.</p>
+
+<p>Hiding in shadows works like it does in BT3. Every time you succeed you
+can attack opponents 10' further than the last time. If you attack, you have
+a chance to critically hit.</p>
+
+<p><h2>Using Items</h2></p>
+
+<p>BTCS allows you to only use equipped items. To deal with running out of
+ammo, you can go to the character status screeens in a combat and equip new
+items if needed. Effectively this means you can use an item with only the
+minor hinderance that you may have to temporary unequip some item for a round.
+Some previous Bard's Tale games have allowed you to use uneqipped items while
+others do not. At the moment Bt Builder currently requires items to be
+equipped except for arrows and thrown weapons. This may be extended to
+miscellaneous item.</p>
+
+<p>In BTCS you use a bow and the equipped arrows are automatically decremented
+and damage calculated. Bt Builder has you select the arrows you want to use
+instead of using the bow. Arrows are not required to be equipped to prevent
+the need to go to the status screen during combat.</p>
 
 <p><h2>Icons</h2></p>
 

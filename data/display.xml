@@ -1,11 +1,12 @@
 <display>
 	<width>320</width>
 	<height>200</height>
-	<background>image/gamescreen.png</background>
+	<expanded><xMult>2</xMult><yMult>2</yMult><directory>640x400</directory></expanded>
+	<background>ui/gamescreen.png</background>
 	<x3d>16</x3d>
 	<y3d>15</y3d>
 	<label><x>16</x><y>103</y><w>112</w><h>13</h></label>
-	<text><x>168</x><y>8</y><w>136</w><h>96</h></text>
+	<text><x>168</x><y>14</y><w>136</w><h>96</h></text>
 	<status number="1"><x>10</x><y>144</y><w>302</w><h>8</h></status>
 	<status number="2"><x>10</x><y>152</y><w>302</w><h>8</h></status>
 	<status number="3"><x>10</x><y>160</y><w>302</w><h>8</h></status>
@@ -129,23 +130,33 @@
 		<align>right</align>
 	</statBlock>
 	<icon>
-		<image>image/light.png</image>
-		<position><x>174</x><y>120</y><w>20</w><h>12</h></position>
+		<image>ui/icons/light.mng</image>
+		<position><x>136</x><y>13</y><w>20</w><h>20</h></position>
 		<effect>22</effect>
 	</icon>
 	<icon>
-		<image>image/armor.png</image>
-		<position><x>199</x><y>120</y><w>20</w><h>12</h></position>
+		<image>ui/icons/shield.png</image>
+		<position><x>136</x><y>34</y><w>20</w><h>20</h></position>
 		<effect>23</effect>
+		<party>true</party>
 	</icon>
 	<icon>
-		<image>image/sight.png</image>
-		<position><x>253</x><y>121</y><w>20</w><h>13</h></position>
-		<effect>25</effect>
+		<image>ui/icons/carpet.mng</image>
+		<position><x>136</x><y>54</y><w>20</w><h>20</h></position>
+		<effect>39</effect>
 	</icon>
 	<facingIcon>
-		<image>image/compass.png</image>
-		<position><x>225</x><y>120</y><w>20</w><h>12</h></position>
+		<image>ui/icons/compass.ng</image>
+		<position><x>136</x><y>76</y><w>20</w><h>20</h></position>
 		<effect>31</effect>
 	</facingIcon>
+	<icon>
+		<image>ui/icons/sight.mng</image>
+		<position><x>136</x><y>99</y><w>20</w><h>20</h></position>
+		<effect>25</effect>
+	</icon>
+	<xMap>128</xMap>
+	<yMap>144</yMap>
+	<widthMap>7</widthMap>
+	<heightMap>7</heightMap>
 </display>

@@ -62,7 +62,7 @@ class BTJobSkillPurchase : public XMLObject
 class BTJobSkill : public XMLObject
 {
  public:
-  BTJobSkill() : skill(-1), value(0), modifier(-1), improve(0) {}
+  BTJobSkill() : skill(-1), value(0), modifier(-1), improve(0), improveLevel(1) {}
 
   BTJobSkillPurchase *findNextPurchase(int current);
   virtual void serialize(ObjectSerializer* s);
@@ -73,6 +73,7 @@ class BTJobSkill : public XMLObject
   int value;
   int modifier;
   int improve;
+  int improveLevel;
   XMLVector<BTJobSkillPurchase*> purchase;
 };
 
@@ -80,7 +81,7 @@ class BTJob : public XMLObject
 {
  public:
   BTJob()
-   : picture(-1), toHit(0), improveToHit(0), improveRateAttacks(0), maxRateAttacks(0), save(0), improveSave(0), ac(0), improveAc(0), hp(0), xpChart(-1), spells(false), advanced(false)
+   : malePicture(-1), femalePicture(-1), toHit(0), improveToHit(0), improveRateAttacks(0), maxRateAttacks(0), save(0), improveSave(0), ac(0), improveAc(0), hp(0), xpChart(-1), spells(false), advanced(false)
   {
    name = new char[1];
    name[0] = 0;
@@ -92,6 +93,7 @@ class BTJob : public XMLObject
 
   int calcToHit(int level);
   int calcSave(int level);
+  BTJobSkill *getSkill(int skillIndex);
   bool isAllowed(BTPc *pc, bool starting);
   virtual void serialize(ObjectSerializer* s);
 
@@ -100,7 +102,8 @@ class BTJob : public XMLObject
 
   char *name;
   char *abbrev;
-  int picture;
+  int malePicture;
+  int femalePicture;
   int toHit;
   int improveToHit;
   int improveRateAttacks;
@@ -123,6 +126,7 @@ class BTJobList : public ValueLookup, public XMLVector<BTJob*>
  public:
   virtual std::string getName(int index);
   virtual int getIndex(std::string name);
+  virtual size_t size();
 };
 
 class BTJobAbbrevList : public ValueLookup
@@ -132,6 +136,7 @@ class BTJobAbbrevList : public ValueLookup
 
   virtual std::string getName(int index);
   virtual int getIndex(std::string name);
+  virtual size_t size();
 
  private:
   BTJobList *jbList;

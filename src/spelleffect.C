@@ -15,7 +15,7 @@
 #define BTSPELLFLG_EXCLAMATION 2
 
 BTBaseEffect::BTBaseEffect(int t, int x, int s, int m)
- : type(t), expiration(x), first(true), singer(s), musicId(m)
+ : type(t), expiration(x), expire(false), first(true), singer(s), musicId(m)
 {
 }
 
@@ -40,9 +40,12 @@ void BTBaseEffect::serialize(ObjectSerializer *s)
 {
  s->add("type", &type);
  s->add("expiration", &expiration);
+ s->add("expire", &expire);
+ s->add("first", &first);
+ s->add("singer", &singer);
 }
 
-bool BTBaseEffect::targets(int g, int who)
+bool BTBaseEffect::targets(int g, int who, bool exact /*= true*/)
 {
  return false;
 }
@@ -74,6 +77,8 @@ void BTBaseEffect::remove(BTCombat *combat, int g, int who)
 
 bool BTBaseEffect::isExpired(BTGame *game)
 {
+ if (expire)
+  return true;
  if (game->isExpired(expiration))
  {
   return true;
@@ -95,9 +100,27 @@ BTTargetedEffect::BTTargetedEffect(int t, int x, int s, int m, int g, int trgt)
 {
 }
 
-bool BTTargetedEffect::targets(int g, int who)
+void BTTargetedEffect::serialize(ObjectSerializer *s)
 {
- return (g == group) && (who == target);
+ s->add("group", &group);
+ s->add("target", &target);
+ BTBaseEffect::serialize(s);
+}
+
+bool BTTargetedEffect::targets(int g, int who, bool exact /*= true*/)
+{
+ if ((g == group) && (who == target))
+  return true;
+ else if (!exact)
+ {
+  if ((g == BTTARGET_ALLMONSTERS) && (group >= BTTARGET_MONSTER))
+   return true;
+  if ((g == group) && (target == BTTARGET_INDIVIDUAL))
+   return true;
+  if ((g == group) && (who == BTTARGET_INDIVIDUAL))
+   return true;
+ }
+ return false;
 }
 
 bool BTTargetedEffect::targetsMonsters()
@@ -134,472 +157,18 @@ void BTTargetedEffect::remove(BTCombat *combat, int g, int who)
  }
 }
 
-BTAttackEffect::BTAttackEffect(int t, int x, int s, int m, int rng, int erng, int d, int g, int trgt, const BTDice &dam, int sts, const char *text)
- : BTTargetedEffect(t, x, s, m, g, trgt), range(rng), effectiveRange(erng), distance(d), damage(dam), status(sts), statusText(text)
+BTResistedEffect::BTResistedEffect(int t, int x, int s, int m, int g, int trgt)
+ : BTTargetedEffect(t, x, s, m, g, trgt)
 {
 }
 
-int BTAttackEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+void BTResistedEffect::serialize(ObjectSerializer *s)
 {
- if (g != BTTARGET_NONE)
- {
-  checkResists(combat, g, trgt);
-  return 0;
- }
- else
- {
-  if (checkResists(combat, group, target))
-  {
-   displayResists(d, combat);
-   throw BTAllResistException();
-  }
-  return maintain(d, combat);
- }
+ s->add("resists", &resists, NULL);
+ BTTargetedEffect::serialize(s);
 }
 
-int BTAttackEffect::maintain(BTDisplay &d, BTCombat *combat)
-{
- int killed = 0;
- BTGame *game = BTGame::getGame();
- BTFactory<BTMonster> &monList = game->getMonsterList();
- if (BTTARGET_PARTY == group)
- {
-  BTParty &party = game->getParty();
-  if (distance > (range * (1 + effectiveRange)))
-   return 0;
-  if (BTTARGET_INDIVIDUAL == target)
-  {
-   for (int i = 0; i < party.size(); ++i)
-   {
-    int dam = damage.roll();
-    if (distance > range)
-     dam = dam / 2;
-    BitField flags;
-    if ((party[i]->isAlive()) && (resists.isSet(i)))
-    {
-     if (first)
-     {
-      dam = dam / 2;
-      if (party[i]->takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(party[i]->name, ((dam > 0) ? "saves and takes" : "repealed the spell"), dam, "", flags);
-      if ((!party[i]->isAlive()) && (party[i]->active))
-      {
-       ++killed;
-       party[i]->active = false;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-    }
-    else if ((party[i]->isAlive()) && (!party[i]->status.isSet(status)))
-    {
-     if (party[i]->savingThrow())
-     {
-      dam = dam / 2;
-      if (party[i]->takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(party[i]->name, ((dam > 0) ? "saves and takes" : "saves"), dam, "", flags);
-      if ((!party[i]->isAlive()) && (party[i]->active))
-      {
-       ++killed;
-       party[i]->active = false;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-     else
-     {
-      if (damage.getNumber())
-       flags.set(BTSPELLFLG_DAMAGE);
-      if (party[i]->takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      std::string text = message(party[i]->name, ((dam > 0) ? "takes" : ""), dam, statusText, flags);
-      d.drawMessage(text.c_str(), game->getDelay());
-      if (status != BTSTATUS_NONE)
-       party[i]->status.set(status);
-      if ((!party[i]->isAlive()) && (party[i]->active))
-      {
-       ++killed;
-       party[i]->active = false;
-      }
-     }
-    }
-   }
-  }
-  else
-  {
-   if ((party[target]->isAlive()) && (!party[target]->status.isSet(status)))
-   {
-    int dam = damage.roll();
-    if (distance > range)
-     dam = dam / 2;
-    BitField flags;
-    if (party[target]->savingThrow())
-    {
-     dam = dam / 2;
-     if (party[target]->takeHP(dam))
-     {
-      flags.set(BTSPELLFLG_KILLED);
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     }
-     if (dam == 0)
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     std::string text = message(party[target]->name, ((dam > 0) ? "saves and takes" : "saves!"), dam, "", flags);
-     if ((!party[target]->isAlive()) && (party[target]->active))
-     {
-      ++killed;
-      party[target]->active = false;
-     }
-     d.drawMessage(text.c_str(), game->getDelay());
-    }
-    else
-    {
-     if (damage.getNumber())
-      flags.set(BTSPELLFLG_DAMAGE);
-     if (party[target]->takeHP(dam))
-     {
-      flags.set(BTSPELLFLG_KILLED);
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     }
-     std::string text = message(party[target]->name, ((dam > 0) ? "takes" : ""), dam, statusText, flags);
-     d.drawMessage(text.c_str(), game->getDelay());
-     if (status != BTSTATUS_NONE)
-      party[target]->status.set(status);
-     if ((!party[target]->isAlive()) && (party[target]->active))
-     {
-      ++killed;
-      party[target]->active = false;
-     }
-    }
-   }
-  }
- }
- else if (BTTARGET_ALLMONSTERS == group)
- {
-  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
-  {
-   BTMonsterGroup *grp = combat->getMonsterGroup(i);
-   if (NULL == grp)
-    break;
-   if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
-    continue;
-   for (int k = 0; k < grp->individual.size(); ++k)
-   {
-    int dam = damage.roll();
-    if (abs(grp->distance - distance) > range)
-     dam = dam / 2;
-    BitField flags;
-    if ((grp->individual[k].isAlive()) && (resists.isSet(k)))
-    {
-     if (first)
-     {
-      dam = dam / 2;
-      if (grp->individual[k].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "saves and takes" : "repelled the spell"), dam, "", flags);
-      if ((!grp->individual[k].isAlive()) && (grp->individual[k].active))
-      {
-       ++killed;
-       grp->individual[k].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-    }
-    else if ((grp->individual[k].isAlive()) && (!grp->individual[k].status.isSet(status)))
-    {
-     if (monList[grp->monsterType].savingThrow())
-     {
-      dam = dam / 2;
-      if (grp->individual[k].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "saves and takes" : "saves"), dam, "", flags);
-      if ((!grp->individual[k].isAlive()) && (grp->individual[k].active))
-      {
-       ++killed;
-       grp->individual[k].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-     else
-     {
-      if (damage.getNumber())
-       flags.set(BTSPELLFLG_DAMAGE);
-      if (grp->individual[k].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "takes" : ""), dam, statusText, flags);
-      if (status != BTSTATUS_NONE)
-       grp->individual[k].status.set(status);
-      if ((!grp->individual[k].isAlive()) && (grp->individual[k].active))
-      {
-       ++killed;
-       grp->individual[k].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-    }
-   }
-  }
- }
- else if (group >= BTTARGET_MONSTER)
- {
-  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
-  if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
-   return 0;
-  if (BTTARGET_INDIVIDUAL == target)
-  {
-   for (int i = 0; i < grp->individual.size(); ++i)
-   {
-    int dam = damage.roll();
-    if (abs(grp->distance - distance) > range)
-     dam = dam / 2;
-    BitField flags;
-    if ((grp->individual[i].isAlive()) && (resists.isSet(i)))
-    {
-     if (first)
-     {
-      dam = dam / 2;
-      if (grp->individual[i].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "saves and takes" : "repelled the spell"), dam, "", flags);
-      if ((!grp->individual[i].isAlive()) && (grp->individual[i].active))
-      {
-       ++killed;
-       grp->individual[i].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-    }
-    else if ((grp->individual[i].isAlive()) && (!grp->individual[i].status.isSet(status)))
-    {
-     if (monList[grp->monsterType].savingThrow())
-     {
-      dam = dam / 2;
-      if (grp->individual[i].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      if (dam == 0)
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "saves and takes" : "saves"), dam, "", flags);
-      if ((!grp->individual[i].isAlive()) && (grp->individual[i].active))
-      {
-       ++killed;
-       grp->individual[i].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-     else
-     {
-      if (damage.getNumber())
-       flags.set(BTSPELLFLG_DAMAGE);
-      if (grp->individual[i].takeHP(dam))
-      {
-       flags.set(BTSPELLFLG_KILLED);
-       flags.set(BTSPELLFLG_EXCLAMATION);
-      }
-      std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "takes" : ""), dam, statusText, flags);
-      if (status != BTSTATUS_NONE)
-       grp->individual[i].status.set(status);
-      if ((!grp->individual[i].isAlive()) && (grp->individual[i].active))
-      {
-       ++killed;
-       grp->individual[i].active = false;
-       grp->active--;
-      }
-      d.drawMessage(text.c_str(), game->getDelay());
-     }
-    }
-   }
-  }
-  else
-  {
-   if ((grp->individual[target].isAlive()) && (!grp->individual[target].status.isSet(status)))
-   {
-    int dam = damage.roll();
-    if (abs(grp->distance - distance) > range)
-     dam = dam / 2;
-    BitField flags;
-    if (monList[grp->monsterType].savingThrow())
-    {
-     dam = dam / 2;
-     if (grp->individual[target].takeHP(dam))
-     {
-      flags.set(BTSPELLFLG_KILLED);
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     }
-     if (dam == 0)
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "saves and takes" : "saves"), dam, "", flags);
-     if ((!grp->individual[target].isAlive()) && (grp->individual[target].active))
-     {
-      ++killed;
-      grp->individual[target].active = false;
-      grp->active--;
-     }
-     d.drawMessage(text.c_str(), game->getDelay());
-    }
-    else
-    {
-     if (damage.getNumber())
-      flags.set(BTSPELLFLG_DAMAGE);
-     if (grp->individual[target].takeHP(dam))
-     {
-      flags.set(BTSPELLFLG_KILLED);
-      flags.set(BTSPELLFLG_EXCLAMATION);
-     }
-     std::string text = message(monList[grp->monsterType].getName(), ((dam > 0) ? "takes" : ""), dam, statusText, flags);
-     if (status != BTSTATUS_NONE)
-      grp->individual[target].status.set(status);
-     if ((!grp->individual[target].isAlive()) && (grp->individual[target].active))
-     {
-      ++killed;
-      grp->individual[target].active = false;
-      grp->active--;
-     }
-     d.drawMessage(text.c_str(), game->getDelay());
-    }
-   }
-  }
- }
- if (BTTARGET_PARTY == group)
-  d.drawStats();
- return killed;
-}
-
-void BTAttackEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
-{
- if (g == BTTARGET_NONE)
-  return;
- if (BTTARGET_PARTY == group)
- {
-  BTGame *game = BTGame::getGame();
-  BTParty &party = game->getParty();
-  if (BTTARGET_INDIVIDUAL == target)
-  {
-   for (int i = 0; i < party.size(); ++i)
-   {
-    if (party[i]->status.isSet(status))
-    {
-     party[i]->status.clear(status);
-    }
-   }
-  }
-  else
-  {
-   if (party[target]->status.isSet(status))
-   {
-    party[target]->status.clear(status);
-   }
-  }
- }
- else if (BTTARGET_ALLMONSTERS == group)
- {
-  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
-  {
-   BTMonsterGroup *grp = combat->getMonsterGroup(i);
-   if (NULL == grp)
-    break;
-   for (int k = 0; k < grp->individual.size(); ++k)
-   {
-    if ((grp->individual[k].isAlive()) && (!grp->individual[k].status.isSet(status)))
-    {
-     grp->individual[k].status.clear(status);
-    }
-   }
-  }
- }
- else if (group >= BTTARGET_MONSTER)
- {
-  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
-  if (BTTARGET_INDIVIDUAL == target)
-  {
-   for (int i = 0; i < grp->individual.size(); ++i)
-   {
-    if (grp->individual[i].status.isSet(status))
-    {
-     grp->individual[i].status.clear(status);
-    }
-   }
-  }
-  else
-  {
-   if (grp->individual[target].status.isSet(status))
-   {
-    grp->individual[target].status.clear(status);
-   }
-  }
- }
- if (BTTARGET_PARTY == group)
-  d.drawStats();
-}
-
-void BTAttackEffect::move(int g, int who, int where)
-{
- if ((g == group) && (BTTARGET_INDIVIDUAL == target))
- {
-  resists.move(who, where);
- }
- BTTargetedEffect::move(g, who, where);
-}
-
-void BTAttackEffect::remove(BTCombat *combat, int g, int who)
-{
- if ((group == g) && (target == BTTARGET_INDIVIDUAL))
- {
-  resists.remove(who);
- }
- else if (group == BTTARGET_ALLMONSTERS)
- {
-  int total = 0;
-  for (int i = 0; i < g; ++i)
-  {
-   BTMonsterGroup *grp = combat->getMonsterGroup(i);
-   if (NULL == grp)
-    break;
-   total += grp->individual.size();
-  }
-  resists.remove(total + who);
- }
- BTTargetedEffect::remove(combat, g, who);
-}
-
-bool BTAttackEffect::checkResists(BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+bool BTResistedEffect::checkResists(BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
 {
  if (g == BTTARGET_NONE)
  {
@@ -700,69 +269,127 @@ bool BTAttackEffect::checkResists(BTCombat *combat, int g /*= BTTARGET_NONE*/, i
  return false;
 }
 
-void BTAttackEffect::displayResists(BTDisplay &d, BTCombat *combat)
+BTAttackEffect::BTAttackEffect(int t, int x, int s, int m, int rng, int erng, int d, int g, int trgt, const BTDice &dam, int sts)
+ : BTResistedEffect(t, x, s, m, g, trgt), range(rng), effectiveRange(erng), distance(d), damage(dam), status(sts)
 {
- std::string text;
- if (BTTARGET_ALLMONSTERS == group)
+}
+
+void BTAttackEffect::serialize(ObjectSerializer *s)
+{
+ s->add("range", &range);
+ s->add("effectiveRange", &effectiveRange);
+ s->add("distance", &distance);
+ s->add("damage", &damage);
+ s->add("status", &status);
+ BTResistedEffect::serialize(s);
+}
+
+int BTAttackEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+{
+ if (g != BTTARGET_NONE)
  {
-  text = "All monsters";
+  checkResists(combat, g, trgt);
+  return 0;
  }
- else if (BTTARGET_PARTY == group)
+ else
  {
-  BTParty &party = BTGame::getGame()->getParty();
+  if (checkResists(combat, group, target))
+  {
+   displayResists(d, combat);
+   throw BTAllResistException();
+  }
+  return maintain(d, combat);
+ }
+}
+
+int BTAttackEffect::maintain(BTDisplay &d, BTCombat *combat)
+{
+ int killed = 0;
+ BTGame *game = BTGame::getGame();
+ BTFactory<BTMonster> &monList = game->getMonsterList();
+ if (BTTARGET_PARTY == group)
+ {
+  BTParty &party = game->getParty();
+  if (distance > (range * (1 + effectiveRange)))
+   return 0;
   if (BTTARGET_INDIVIDUAL == target)
-   text = "The whole party";
+  {
+   killed += applyToGroup(d, &party);
+  }
   else
-   text = party[target]->name;
+  {
+   if (party[target]->isAlive())
+   {
+    int activeNum = 0;
+    std::string text = BTCombatant::specialAttack(party[target], damage, status, (distance > range), activeNum);
+    killed += abs(activeNum);
+    d.drawMessage(text.c_str(), game->getDelay());
+   }
+  }
+ }
+ else if (BTTARGET_ALLMONSTERS == group)
+ {
+  int resistOffset = 0;
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   killed += applyToGroup(d, grp, resistOffset);
+   resistOffset += grp->size();
+  }
  }
  else if (group >= BTTARGET_MONSTER)
  {
-  BTFactory<BTMonster> &monList = BTGame::getGame()->getMonsterList();
   BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
-  text = monList[grp->monsterType].getName();
-  if ((BTTARGET_INDIVIDUAL == target) && (1 < grp->individual.size()))
-   text += "(s)";
+  if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
+   return 0;
+  if (BTTARGET_INDIVIDUAL == target)
+  {
+   killed += applyToGroup(d, grp);
+  }
+  else
+  {
+   if (grp->individual[target].isAlive())
+   {
+    int activeNum = 0;
+    std::string text = BTCombatant::specialAttack(&(grp->individual[target]), damage, status, (abs(grp->distance - distance) > range), activeNum);
+    killed += abs(activeNum);
+    d.drawMessage(text.c_str(), game->getDelay());
+   }
+  }
  }
- text += " repelled the spell!";
- d.drawMessage(text.c_str(), BTGame::getGame()->getDelay());
+ if (BTTARGET_PARTY == group)
+  d.drawStats();
+ return killed;
 }
 
-std::string BTAttackEffect::message(const char *name, const char *text, int damage, const std::string &status, const BitField &flags)
+int BTAttackEffect::applyToGroup(BTDisplay &d, BTCombatantCollection *grp, int resistOffset /*= 0*/)
 {
- std::string msg = name;
- if ((msg.length() > 0) && (text[0] != 0))
-  msg += " ";
- msg += text;
- if ((damage > 0 ) || (flags.isSet(BTSPELLFLG_DAMAGE)))
+ if (abs(grp->getDistance() - distance) > (range * (1 + effectiveRange)))
+  return 0;
+ BTGame *game = BTGame::getGame();
+ int killed(0);
+ for (int i = 0; i < grp->size(); ++i)
  {
-  if (msg.length() > 0)
-   msg += " ";
-  char tmp[20];
-  sprintf(tmp, "%d", damage);
-  msg += tmp;
-  msg += " points of damage";
-  if (flags.isSet(BTSPELLFLG_KILLED))
-   msg += ", killing him";
-  if (status[0] != 0)
-   msg += " and";
+  bool saved = resists.isSet(resistOffset + i);
+  int activeNum = 0;
+  if ((grp->at(i)->isAlive()) && ((first) || (!saved)))
+  {
+   std::string text = BTCombatant::specialAttack(grp->at(i), damage, status, (abs(grp->getDistance() - distance) > range), activeNum, (first ? &saved : NULL));
+   killed += abs(activeNum);
+   d.drawMessage(text.c_str(), game->getDelay());
+  }
  }
- if ((msg.length() > 0) && (status[0] != 0))
-  msg += " ";
- msg += status;
- if (flags.isSet(BTSPELLFLG_EXCLAMATION))
-  msg += "!";
- else
-  msg += ".";
- return msg;
+ return killed;
 }
 
-BTCureStatusEffect::BTCureStatusEffect(int t, int x, int s, int m, int g, int trgt, int sts)
- : BTTargetedEffect(t, x, s, m, g, trgt), status(sts)
+void BTAttackEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
 {
-}
-
-int BTCureStatusEffect::maintain(BTDisplay &d, BTCombat *combat)
-{
+ if (g == BTTARGET_NONE)
+  return;
+ if ((status == BTSTATUS_NONE) || (status == BTSTATUS_LEVELDRAIN) || (status == BTSTATUS_AGED))
+  return;
  if (BTTARGET_PARTY == group)
  {
   BTGame *game = BTGame::getGame();
@@ -822,6 +449,180 @@ int BTCureStatusEffect::maintain(BTDisplay &d, BTCombat *combat)
    }
   }
  }
+ if (BTTARGET_PARTY == group)
+  d.drawStats();
+}
+
+void BTAttackEffect::move(int g, int who, int where)
+{
+ if ((g == group) && (BTTARGET_INDIVIDUAL == target))
+ {
+  resists.move(who, where);
+ }
+ BTTargetedEffect::move(g, who, where);
+}
+
+void BTAttackEffect::remove(BTCombat *combat, int g, int who)
+{
+ if ((group == g) && (target == BTTARGET_INDIVIDUAL))
+ {
+  resists.remove(who);
+ }
+ else if (group == BTTARGET_ALLMONSTERS)
+ {
+  int total = 0;
+  for (int i = 0; i < g; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   total += grp->individual.size();
+  }
+  resists.remove(total + who);
+ }
+ BTTargetedEffect::remove(combat, g, who);
+}
+
+void BTAttackEffect::displayResists(BTDisplay &d, BTCombat *combat)
+{
+ std::string text;
+ if (BTTARGET_ALLMONSTERS == group)
+ {
+  text = "All monsters";
+ }
+ else if (BTTARGET_PARTY == group)
+ {
+  BTParty &party = BTGame::getGame()->getParty();
+  if (BTTARGET_INDIVIDUAL == target)
+   text = "The whole party";
+  else
+   text = party[target]->name;
+ }
+ else if (group >= BTTARGET_MONSTER)
+ {
+  BTFactory<BTMonster> &monList = BTGame::getGame()->getMonsterList();
+  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
+  if ((BTTARGET_INDIVIDUAL == target) && (1 < grp->individual.size()))
+   text = monList[grp->monsterType].getPluralName();
+  else
+   text = monList[grp->monsterType].getName();
+ }
+ text += " repelled the spell!";
+ d.drawMessage(text.c_str(), BTGame::getGame()->getDelay());
+}
+
+BTCureStatusEffect::BTCureStatusEffect(int t, int x, int s, int m, int g, int trgt, int sts)
+ : BTTargetedEffect(t, x, s, m, g, trgt), status(sts)
+{
+}
+
+void BTCureStatusEffect::serialize(ObjectSerializer *s)
+{
+ s->add("status", &status);
+ BTTargetedEffect::serialize(s);
+}
+
+int BTCureStatusEffect::maintain(BTDisplay &d, BTCombat *combat)
+{
+ if (BTTARGET_PARTY == group)
+ {
+  BTGame *game = BTGame::getGame();
+  BTParty &party = game->getParty();
+  if (BTTARGET_INDIVIDUAL == target)
+  {
+   for (int i = 0; i < party.size(); ++i)
+   {
+    if (status == BTSTATUS_LEVELDRAIN)
+    {
+     party[i]->restoreLevel();
+    }
+    else if (status == BTSTATUS_AGED)
+    {
+     party[i]->youth();
+    }
+    else if (party[i]->status.isSet(status))
+    {
+     party[i]->status.clear(status);
+    }
+   }
+  }
+  else
+  {
+   if (status == BTSTATUS_LEVELDRAIN)
+   {
+    party[target]->restoreLevel();
+   }
+   else if (status == BTSTATUS_AGED)
+   {
+    party[target]->youth();
+   }
+   else if (party[target]->status.isSet(status))
+   {
+    party[target]->status.clear(status);
+   }
+  }
+ }
+ else if (BTTARGET_ALLMONSTERS == group)
+ {
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   for (int k = 0; k < grp->individual.size(); ++k)
+   {
+    if (status == BTSTATUS_LEVELDRAIN)
+    {
+     grp->individual[k].restoreLevel();
+    }
+    else if (status == BTSTATUS_AGED)
+    {
+     grp->individual[k].youth();
+    }
+    else if ((grp->individual[k].isAlive()) && (!grp->individual[k].status.isSet(status)))
+    {
+     grp->individual[k].status.clear(status);
+    }
+   }
+  }
+ }
+ else if (group >= BTTARGET_MONSTER)
+ {
+  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
+  if (BTTARGET_INDIVIDUAL == target)
+  {
+   for (int i = 0; i < grp->individual.size(); ++i)
+   {
+    if (status == BTSTATUS_LEVELDRAIN)
+    {
+     grp->individual[i].restoreLevel();
+    }
+    else if (status == BTSTATUS_AGED)
+    {
+     grp->individual[i].youth();
+    }
+    else if (grp->individual[i].status.isSet(status))
+    {
+     grp->individual[i].status.clear(status);
+    }
+   }
+  }
+  else
+  {
+   if (status == BTSTATUS_LEVELDRAIN)
+   {
+    grp->individual[target].restoreLevel();
+   }
+   else if (status == BTSTATUS_AGED)
+   {
+    grp->individual[target].youth();
+   }
+   else if (grp->individual[target].status.isSet(status))
+   {
+    grp->individual[target].status.clear(status);
+   }
+  }
+ }
  d.drawStats();
  return 0;
 }
@@ -829,6 +630,12 @@ int BTCureStatusEffect::maintain(BTDisplay &d, BTCombat *combat)
 BTHealEffect::BTHealEffect(int t, int x, int s, int m, int g, int trgt, const BTDice &h)
  : BTTargetedEffect(t, x, s, m, g, trgt), heal(h)
 {
+}
+
+void BTHealEffect::serialize(ObjectSerializer *s)
+{
+ s->add("heal", &heal);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTHealEffect::maintain(BTDisplay &d, BTCombat *combat)
@@ -898,9 +705,108 @@ void BTSummonIllusionEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BT
  }
 }
 
+BTDispellIllusionEffect::BTDispellIllusionEffect(int t, int x, int s, int m, int rng, int erng, int d, int g, int trgt)
+ : BTTargetedEffect(t, x, s, m, g, trgt), range(rng), effectiveRange(erng), distance(d)
+{
+}
+
+void BTDispellIllusionEffect::serialize(ObjectSerializer *s)
+{
+ s->add("range", &range);
+ s->add("effectiveRange", &effectiveRange);
+ s->add("distance", &distance);
+ BTTargetedEffect::serialize(s);
+}
+
+int BTDispellIllusionEffect::maintain(BTDisplay &d, BTCombat *combat)
+{
+ int killed = 0;
+ BTGame *game = BTGame::getGame();
+ BTFactory<BTMonster> &monList = game->getMonsterList();
+ if (BTTARGET_PARTY == group)
+ {
+  BTParty &party = game->getParty();
+  if (distance > (range * (1 + effectiveRange)))
+   return 0;
+  if (BTTARGET_INDIVIDUAL == target)
+  {
+   killed += applyToGroup(d, &party);
+  }
+  else
+  {
+   killed += apply(d, party[target]);
+  }
+ }
+ else if (BTTARGET_ALLMONSTERS == group)
+ {
+  int resistOffset = 0;
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   killed += applyToGroup(d, grp);
+   resistOffset += grp->size();
+  }
+ }
+ else if (group >= BTTARGET_MONSTER)
+ {
+  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
+  if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
+   return 0;
+  if (BTTARGET_INDIVIDUAL == target)
+  {
+   killed += applyToGroup(d, grp);
+  }
+  else
+  {
+   killed += apply(d, grp->at(target));
+  }
+ }
+ if (BTTARGET_PARTY == group)
+  d.drawStats();
+ return killed;
+}
+
+int BTDispellIllusionEffect::applyToGroup(BTDisplay &d, BTCombatantCollection *grp)
+{
+ if (abs(grp->getDistance() - distance) > (range * (1 + effectiveRange)))
+  return 0;
+ int killed(0);
+ for (int i = 0; i < grp->size(); ++i)
+ {
+  killed += apply(d, grp->at(i));
+ }
+ return killed;
+}
+
+int BTDispellIllusionEffect::apply(BTDisplay &d, BTCombatant *target)
+{
+ int killed(0);
+ if ((target->isAlive()) && (target->isIllusion()))
+ {
+  BTGame *game = BTGame::getGame();
+  int activeNum = 0;
+  target->deactivate(activeNum);
+  target->status.set(BTSTATUS_DEAD);
+  killed += abs(activeNum);
+  std::string text = "An illusionary ";
+  text += target->getName();
+  text += " disappears!";
+  d.drawMessage(text.c_str(), game->getDelay());
+ }
+ return killed;
+}
+
 BTArmorBonusEffect::BTArmorBonusEffect(int t, int x, int s, int m, int g, int trgt, int b)
  : BTTargetedEffect(t, x, s, m, g, trgt), bonus(b)
 {
+}
+
+void BTArmorBonusEffect::serialize(ObjectSerializer *s)
+{
+ s->add("bonus", &bonus);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTArmorBonusEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
@@ -1012,6 +918,126 @@ void BTArmorBonusEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARG
  }
 }
 
+BTHitBonusEffect::BTHitBonusEffect(int t, int x, int s, int m, int g, int trgt, int b)
+ : BTTargetedEffect(t, x, s, m, g, trgt), bonus(b)
+{
+}
+
+void BTHitBonusEffect::serialize(ObjectSerializer *s)
+{
+ s->add("bonus", &bonus);
+ BTTargetedEffect::serialize(s);
+}
+
+int BTHitBonusEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+{
+ BTGame *game = BTGame::getGame();
+ BTParty &party = game->getParty();
+ if (g == BTTARGET_NONE)
+ {
+  g = group;
+  trgt = target;
+ }
+ if (BTTARGET_PARTY == g)
+ {
+  if (BTTARGET_INDIVIDUAL == trgt)
+  {
+   for (int i = 0; i < party.size(); ++i)
+   {
+    party[i]->toHit += bonus;
+   }
+  }
+  else
+  {
+   party[trgt]->toHit += bonus;
+  }
+  d.drawStats();
+ }
+ else if (BTTARGET_ALLMONSTERS == g)
+ {
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   for (int k = 0; k < grp->individual.size(); ++k)
+   {
+    grp->individual[k].toHit += bonus;
+   }
+  }
+ }
+ else if (g >= BTTARGET_MONSTER)
+ {
+  BTMonsterGroup *grp = combat->getMonsterGroup(g - BTTARGET_MONSTER);
+  if (BTTARGET_INDIVIDUAL == trgt)
+  {
+   for (int i = 0; i < grp->individual.size(); ++i)
+   {
+    grp->individual[i].toHit += bonus;
+   }
+  }
+  else
+  {
+   grp->individual[trgt].toHit += bonus;
+  }
+ }
+ return 0;
+}
+
+void BTHitBonusEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+{
+ BTGame *game = BTGame::getGame();
+ BTParty &party = game->getParty();
+ if (g == BTTARGET_NONE)
+ {
+  g = group;
+  trgt = target;
+ }
+ if (BTTARGET_PARTY == g)
+ {
+  if (BTTARGET_INDIVIDUAL == trgt)
+  {
+   for (int i = 0; i < party.size(); ++i)
+   {
+    party[i]->toHit -= bonus;
+   }
+  }
+  else
+  {
+   party[trgt]->toHit -= bonus;
+  }
+  d.drawStats();
+ }
+ else if (BTTARGET_ALLMONSTERS == g)
+ {
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   for (int k = 0; k < grp->individual.size(); ++k)
+   {
+    grp->individual[k].toHit -= bonus;
+   }
+  }
+ }
+ else if (g >= BTTARGET_MONSTER)
+ {
+  BTMonsterGroup *grp = combat->getMonsterGroup(g - BTTARGET_MONSTER);
+  if (BTTARGET_INDIVIDUAL == trgt)
+  {
+   for (int i = 0; i < grp->individual.size(); ++i)
+   {
+    grp->individual[i].toHit -= bonus;
+   }
+  }
+  else
+  {
+   grp->individual[trgt].toHit -= bonus;
+  }
+ }
+}
+
 BTResurrectEffect::BTResurrectEffect(int t, int x, int s, int m, int g, int trgt)
  : BTTargetedEffect(t, x, s, m, g, trgt)
 {
@@ -1045,14 +1071,75 @@ int BTResurrectEffect::maintain(BTDisplay &d, BTCombat *combat)
  }
 }
 
+BTDispellMagicEffect::BTDispellMagicEffect(int t, int x, int s, int m, int rng, int erng, int d, int g, int trgt)
+ : BTTargetedEffect(t, x, s, m, g, trgt), range(rng), effectiveRange(erng), distance(d)
+{
+}
+
+void BTDispellMagicEffect::serialize(ObjectSerializer *s)
+{
+ s->add("range", &range);
+ s->add("effectiveRange", &effectiveRange);
+ s->add("distance", &distance);
+ BTTargetedEffect::serialize(s);
+}
+
+int BTDispellMagicEffect::maintain(BTDisplay &d, BTCombat *combat)
+{
+ bool oldExpire = expire;
+ BTGame *game = BTGame::getGame();
+ if (BTTARGET_PARTY == group)
+ {
+  if (distance > (range * (1 + effectiveRange)))
+   return 0;
+  game->clearEffectsBySource(d, false, group, target);
+ }
+ else if (BTTARGET_ALLMONSTERS == group)
+ {
+  for (int i = 0; i < BTCOMBAT_MAXENCOUNTERS; ++i)
+  {
+   BTMonsterGroup *grp = combat->getMonsterGroup(i);
+   if (NULL == grp)
+    break;
+   if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
+    continue;
+   game->clearEffectsBySource(d, false, i + BTTARGET_MONSTER, target);
+  }
+ }
+ else if (group >= BTTARGET_MONSTER)
+ {
+  BTMonsterGroup *grp = combat->getMonsterGroup(group - BTTARGET_MONSTER);
+  if (abs(grp->distance - distance) > (range * (1 + effectiveRange)))
+   return 0;
+  game->clearEffectsBySource(d, false, group, target);
+ }
+ expire = oldExpire;
+ return 0;
+}
+
 BTPhaseDoorEffect::BTPhaseDoorEffect(int t, int x, int s, int m, int mX, int mY, int f)
  : BTBaseEffect(t, x, s, m), mapX(mX), mapY(mY), facing(f)
 {
 }
 
+void BTPhaseDoorEffect::serialize(ObjectSerializer *s)
+{
+ s->add("mapX", &mapX);
+ s->add("mapY", &mapY);
+ s->add("facing", &facing);
+ BTBaseEffect::serialize(s);
+}
+
 BTRegenSkillEffect::BTRegenSkillEffect(int t, int x, int s, int m, int g, int trgt, int sk, const BTDice& u)
  : BTTargetedEffect(t, x, s, m, g, trgt), skill(sk), use(u)
 {
+}
+
+void BTRegenSkillEffect::serialize(ObjectSerializer *s)
+{
+ s->add("skill", &skill);
+ s->add("use", &use);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTRegenSkillEffect::maintain(BTDisplay &d, BTCombat *combat)
@@ -1084,6 +1171,12 @@ int BTRegenSkillEffect::maintain(BTDisplay &d, BTCombat *combat)
 BTPushEffect::BTPushEffect(int t, int x, int s, int m, int g, int trgt, int dis)
  : BTTargetedEffect(t, x, s, m, g, trgt), distance(dis)
 {
+}
+
+void BTPushEffect::serialize(ObjectSerializer *s)
+{
+ s->add("distance", &distance);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTPushEffect::maintain(BTDisplay &d, BTCombat *combat)
@@ -1121,6 +1214,12 @@ int BTPushEffect::maintain(BTDisplay &d, BTCombat *combat)
 BTAttackRateBonusEffect::BTAttackRateBonusEffect(int t, int x, int s, int m, int g, int trgt, int b)
  : BTTargetedEffect(t, x, s, m, g, trgt), bonus(b)
 {
+}
+
+void BTAttackRateBonusEffect::serialize(ObjectSerializer *s)
+{
+ s->add("bonus", &bonus);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTAttackRateBonusEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
@@ -1189,6 +1288,12 @@ BTRegenManaEffect::BTRegenManaEffect(int t, int x, int s, int m, int g, int trgt
 {
 }
 
+void BTRegenManaEffect::serialize(ObjectSerializer *s)
+{
+ s->add("mana", &mana);
+ BTTargetedEffect::serialize(s);
+}
+
 int BTRegenManaEffect::maintain(BTDisplay &d, BTCombat *combat)
 {
  BTGame *game = BTGame::getGame();
@@ -1218,6 +1323,12 @@ int BTRegenManaEffect::maintain(BTDisplay &d, BTCombat *combat)
 BTSaveBonusEffect::BTSaveBonusEffect(int t, int x, int s, int m, int g, int trgt, int b)
  : BTTargetedEffect(t, x, s, m, g, trgt), bonus(b)
 {
+}
+
+void BTSaveBonusEffect::serialize(ObjectSerializer *s)
+{
+ s->add("bonus", &bonus);
+ BTTargetedEffect::serialize(s);
 }
 
 int BTSaveBonusEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
@@ -1279,5 +1390,85 @@ void BTSaveBonusEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARGE
  {
   // Doesn't work on monsters
  }
+}
+
+BTScrySightEffect::BTScrySightEffect(int t, int x, int s, int m)
+ : BTBaseEffect(t, x, s, m)
+{
+}
+
+int BTScrySightEffect::maintain(BTDisplay &d, BTCombat *combat)
+{
+ d.drawView();
+ d.drawMap(true);
+}
+
+BTSpellBindEffect::BTSpellBindEffect(int t, int x, int s, int m, int g, int trgt)
+ : BTResistedEffect(t, x, s, m, g, trgt)
+{
+}
+
+int BTSpellBindEffect::apply(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+{
+ if (!targetsMonsters())
+  return 0;
+ if (target == BTTARGET_ALLMONSTERS)
+  return 0;
+ if (g == BTTARGET_NONE)
+ {
+  g = group;
+  trgt = target;
+ }
+ BTGame *game = BTGame::getGame();
+ BTParty &party = game->getParty();
+ BTMonsterGroup *grp = combat->getMonsterGroup(g - BTTARGET_MONSTER);
+ BTFactory<BTMonster> &monsterList = game->getMonsterList();
+ if (checkResists(combat, g, trgt))
+ {
+  std::string text = monsterList[grp->monsterType].getName();
+  text += " resists!";
+  d.drawMessage(text.c_str(), game->getDelay());
+  throw BTAllResistException();
+ }
+ else
+ {
+  if (trgt == BTTARGET_INDIVIDUAL)
+  {
+  }
+  else
+  {
+   if (party.size() >= BT_PARTYSIZE)
+   {
+    std::string text = "No room in your party. ";
+    text += monsterList[grp->monsterType].getName();
+    text += " cannot join!";
+    d.drawMessage(text.c_str(), game->getDelay());
+   }
+   else
+   {
+    BTPc *pc = new BTPc(grp->monsterType, BTJOB_MONSTER, grp->at(trgt));
+    party.add(d, pc);
+    d.drawStats();
+    grp->at(trgt)->status.set(BTSTATUS_DEAD);
+    return 1;
+   }
+  }
+ }
+ return 0;
+}
+
+void BTSpellBindEffect::finish(BTDisplay &d, BTCombat *combat, int g /*= BTTARGET_NONE*/, int trgt /*= BTTARGET_INDIVIDUAL*/)
+{
+}
+
+BTLightEffect::BTLightEffect(int t, int x, int s, int m, int g, int trgt, int illum)
+ : BTTargetedEffect(t, x, s, m, g, trgt), illumination(illum)
+{
+}
+
+void BTLightEffect::serialize(ObjectSerializer *s)
+{
+ s->add("illumination", &illumination);
+ BTTargetedEffect::serialize(s);
 }
 

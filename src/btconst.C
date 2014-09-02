@@ -47,9 +47,13 @@ char *spellTypes[] =
  "Regenerate Spell Points",
  "Save Bonus",
  "Block Random Encounters",
- "Block Spells"
+ "Block Spells",
+ "Spell Bind",
+ "Levitation",
+ "Regenerate Skill",
+ "Cure Status"
 };
-ArrayLookup spellTypeLookup(BT_SPELLTYPES, spellTypes);
+ArrayLookup spellTypeLookup(BT_SPELLTYPES_FULL, spellTypes);
 
 char *effectiveRanges[] =
 {
@@ -102,6 +106,7 @@ char *rangedTypes[] =
  "Physical: Group",
  "Magic"
 };
+ArrayLookup rangedTypeLookup(BT_RANGEDTYPES, rangedTypes);
 
 char *combatActions[] =
 {
@@ -112,6 +117,7 @@ char *combatActions[] =
  "Random",
  "Nothing"
 };
+ArrayLookup combatActionLookup(BT_COMBATACTIONS, combatActions);
 
 char *itemTypes[] =
 {
@@ -129,6 +135,7 @@ char *itemTypes[] =
  "arrow",
  "thrown weapon"
 };
+ArrayLookup itemTypesLookup(BT_ITEMTYPES, itemTypes);
 
 char *conditionalCommands[] =
 {
@@ -149,7 +156,8 @@ char *conditionalCommands[] =
  "global flag $F is clear",
  "random percent <= $G",
  "race $R is in party",
- "can take $# gold from party"
+ "can take $# gold from party",
+ "$E is active"
 };
 
 char *specialCommands[] =
@@ -211,11 +219,20 @@ char *specialCommands[] =
  "display $$ as full screen picture",
  "do special $S in $# minutes",
  "cancel timed special",
- "goto line number $J",
+ "goto $$",
  "subtract $# from counter",
  "relative teleport by $L dir: $D in $N",
- "tele-activate to $L dir: $D in $N"
+ "tele-activate to $L dir: $D in $N",
+ "label $$"
 };
+
+char *specialFlag[] =
+{
+ "Silence",
+ "Anti-magic",
+ "Darkness"
+};
+ArrayLookup specialFlagLookup(BT_SPECIALFLAGS, specialFlag);
 
 char *directions[] =
 {
@@ -224,14 +241,7 @@ char *directions[] =
  "south",
  "west"
 };
-
-char *mapTypes[] =
-{
- "Dungeon 1",
- "Dungeon 2",
- "City",
- "Wilderness"
-};
+ArrayLookup directionsLookup(BT_DIRECTIONS, directions);
 
 char *statAbbrev[] =
 {
@@ -242,6 +252,42 @@ char *statAbbrev[] =
  "Lk"
 };
 ArrayLookup statLookup(BT_STATS, statAbbrev);
+
+char *genderNames[] =
+{
+ "male",
+ "female",
+ "it"
+};
+ArrayLookup genderLookup(BT_GENDERS, genderNames);
+char *genderPronouns[] =
+{
+ "him",
+ "her",
+ "it"
+};
+
+int statusValue[] =
+{
+ BTSTATUS_LEVELDRAIN,
+ BTSTATUS_POISONED,
+ BTSTATUS_INSANE,
+ BTSTATUS_AGED,
+ BTSTATUS_POSSESSED,
+ BTSTATUS_STONED,
+ BTSTATUS_PARALYZED
+};
+char *statusNames[] =
+{
+ "Level drained",
+ "Poisoned",
+ "Insane",
+ "Aged",
+ "Possessed",
+ "Stoned",
+ "Paralyzed"
+};
+PairLookup statusLookup(7, statusValue, statusNames);
 
 char *restriction[] =
 {
@@ -258,4 +304,12 @@ char *targetOverride[] =
  "all monsters"
 };
 ArrayLookup targetOverrideLookup(BT_TARGETOVERRIDES, targetOverride);
+
+char *mapDisplayMode[] =
+{
+ "request",
+ "no3d",
+ "always"
+};
+ArrayLookup mapDisplayModeLookup(BT_MAPDISPLAYMODES, mapDisplayMode);
 

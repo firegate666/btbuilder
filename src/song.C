@@ -59,17 +59,7 @@ void BTSong::serialize(ObjectSerializer* s)
  s->add("name", &name);
  s->add("music", &music);
  s->add("combatMusic", &combatMusic);
- s->add("manifest", &manifest, &BTManifest::create);
- s->add("targetedManifest", &manifest, &BTTargetedManifest::create);
- s->add("armorBonusManifest", &manifest, &BTArmorBonusManifest::create);
- s->add("attackManifest", &manifest, &BTAttackManifest::create);
- s->add("attackRateBonusManifest", &manifest, &BTAttackRateBonusManifest::create);
- s->add("cureStatusManifest", &manifest, &BTCureStatusManifest::create);
- s->add("healManifest", &manifest, &BTHealManifest::create);
- s->add("multiManifest", &manifest, &BTMultiManifest::create);
- s->add("pushManifest", &manifest, &BTPushManifest::create);
- s->add("regenManaManifest", &manifest, &BTRegenManaManifest::create);
- s->add("saveBonusManifest", &manifest, &BTSaveBonusManifest::create);
+ BTManifest::serializeSetup(s, manifest);
 }
 
 void BTSong::readXML(const char *filename, XMLVector<BTSong*> &song)

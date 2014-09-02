@@ -14,6 +14,9 @@
 #include <iostream>
 #include <physfs.h>
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
 char *monFile = NULL;
 char *itmFile = NULL;
 char *splFile = NULL;
@@ -77,6 +80,7 @@ IUByte sideWallsUTF8[4][4] =
 #define MODE_MONSTER  3
 #define MODE_SPELL    4
 #define MODE_MAP      5
+#define MODE_EDITMAP  6
 
 int main(int argc, char *argv[])
 {
@@ -87,8 +91,10 @@ int main(int argc, char *argv[])
   {"monster", 0, 0, 'm'},
   {"spell", 0, 0, 's'},
   {"map", 1, 0, 'p'},
+  {"editmap", 1, 0, 'e'},
   {"ascii", 0, 0, 'a'},
   {"xml", 1, 0, 'x'},
+  {"multiplier", 1, 0, 'u'},
   {0, 0, 0, 0}
  };
 
@@ -96,7 +102,9 @@ int main(int argc, char *argv[])
  int mode = MODE_STANDARD;
  char *mapFile = NULL;
  char *xmlFile = NULL;
- while ((opt = getopt_long(argc,argv,"imsap:x:", long_options, NULL)) != EOF)
+ int multiplier = 0;
+ std::string libDir(TOSTRING(BTBUILDERDIR));
+ while ((opt = getopt_long(argc,argv,"imsap:x:e:l:u:", long_options, NULL)) != EOF)
  {
   switch (opt)
   {
@@ -116,6 +124,19 @@ int main(int argc, char *argv[])
      mapFile = strdup(optarg);
     }
     break;
+   case 'e':
+    mode = MODE_EDITMAP;
+    if (optarg)
+    {
+     mapFile = strdup(optarg);
+    }
+    break;
+   case 'l':
+    if (optarg)
+    {
+     libDir = optarg;
+    }
+    break;
    case 'a':
     utf8 = false;
     break;
@@ -125,55 +146,50 @@ int main(int argc, char *argv[])
      xmlFile = strdup(optarg);
     }
     break;
+   case 'u':
+    if (optarg)
+    {
+     multiplier = atol(optarg);
+    }
+    break;
    default:
     break;
   }
  }
 
+ BTMainScreen mainScreen(argv[0], libDir, multiplier);
  if (optind >= argc)
  {
   if (mode != MODE_STANDARD)
    return 0;
-  BTMainScreen mainScreen(argv[0]);
   mainScreen.run();
   return 0;
  }
  else if (mode == MODE_STANDARD)
  {
-  BTMainScreen mainScreen(argv[0]);
   std::string moduleFile("module/");
   moduleFile += argv[optind];
   moduleFile += ".xml";
   mainScreen.runModule(moduleFile);
   return 0;
  }
- PHYSFS_init(argv[0]);
+ else if (mode == MODE_EDITMAP)
+ {
+  std::string moduleFile("module/");
+  moduleFile += argv[optind];
+  moduleFile += ".xml";
+  mainScreen.editModule(moduleFile, mapFile);
+  return 0;
+ }
  std::string moduleFile("module/");
  moduleFile += argv[optind];
  moduleFile += ".xml";
  BTModule module;
- XMLSerializer parser;
- module.serialize(&parser);
- parser.parse(moduleFile.c_str(), false);
- std::string appName("btbuilder");
- appName += PHYSFS_getDirSeparator();
- appName += argv[optind];
- if (0 == PHYSFS_setSaneConfig("identical", appName.c_str(), NULL, 0, 0))
- {
-  // HACK: Something is wrong with PHYSFS_setSaneConfig on windows.
-  const char *basedir = PHYSFS_getBaseDir();
-  PHYSFS_addToSearchPath(basedir, 1);
- }
- std::string contentPath("module");
- contentPath += PHYSFS_getDirSeparator();
- contentPath += "content";
- contentPath += PHYSFS_getDirSeparator();
- contentPath += module.content;
- PHYSFS_addToSearchPath(contentPath.c_str(), 0);
+ mainScreen.loadModule(moduleFile, module);
  BTGame game(&module);
  BTFactory<BTMonster> &monList(game.getMonsterList());
  BTFactory<BTItem> &itmList(game.getItemList());
- BTFactory<BTSpell> &splList(game.getSpellList());
+ BTFactory<BTSpell, BTSpell1> &splList(game.getSpellList());
  int i;
  if (mode == MODE_MONSTER)
  {
@@ -186,7 +202,7 @@ int main(int argc, char *argv[])
    for (i = 0; i < monList.size(); i++)
    {
     BTMonster &mon(monList[i]);
-    printf("Name: %s\n", mon.getName());
+    printf("Name: %s\n", mon.getName().c_str());
     printf("Illusion: %s   Base armor class: %d\n",
       (mon.isIllusion() ? "Yes" : "No"), (mon.getAc() - 10) * -1);
     printf("Level: %d   Thaumaturgical resistance: %d\n", mon.getLevel(),
@@ -241,7 +257,7 @@ int main(int argc, char *argv[])
   else
   {
    BTSpellListCompare compare;
-   BTSortedFactory<BTSpell> sortedSplList(&splList, &compare);
+   BTSortedFactory<BTSpell, BTSpell1> sortedSplList(&splList, &compare);
    IShort caster = -1;
    IShort level = -1;
    for (i = 0; i < sortedSplList.size(); i++)
@@ -252,21 +268,32 @@ int main(int argc, char *argv[])
      if (caster != mon.getCaster())
      {
       caster = mon.getCaster();
-      printf("Class:  %s\n", BTGame::getGame()->getJobList()[caster]->name);
+      BTJobList& jobList = BTGame::getGame()->getJobList();
+      int j;
+      for (j = 0; j < jobList.size(); ++j)
+      {
+       if (jobList[j]->getSkill(caster) != NULL)
+        break;
+      }
+      printf("Class:  %s\n", ((j < jobList.size()) ? BTGame::getGame()->getJobList()[j]->name : "Unknown"));
      }
      level = mon.getLevel();
      printf("Level: %d\n\n", level);
     }
-    printf("Name: %s\n", mon.getName());
+    printf("Name: %s\n", mon.getName().c_str());
     printf("Code: %s\n", mon.getCode());
     printf("Points: %d   Range: %d   Extra range: %s\n", mon.getSp(),
       mon.getRange() * 10, effectiveRanges[mon.getEffectiveRange()]);
-    printf("Type: %s", spellTypes[mon.getType()]);
+    printf("Target: %s\n", areaEffect[mon.getArea()]);
+    printf("Effect: %s <target>\n", mon.getEffect());
+    printf("Duration: %s\n", durations[mon.getDuration()]);
+    printf("%s", mon.describeManifest().data());
+/*    printf("Type: %s", spellTypes[mon.getType()]);
     switch (mon.getType())
     {
      case BTSPELLTYPE_SUMMONILLUSION:
      case BTSPELLTYPE_SUMMONMONSTER:
-      printf("   Name: %s", monList[mon.getExtra()].getName());
+      printf("   Name: %s", monList[mon.getExtra()].getName().c_str());
       break;
      case BTSPELLTYPE_ARMORBONUS:
      case BTSPELLTYPE_HITBONUS:
@@ -281,25 +308,9 @@ int main(int argc, char *argv[])
      default:
       break;
     }
-    printf("\nTarget: %s\n", areaEffect[mon.getArea()]);
-    printf("Dice: %dd%d   Duration: %s\n", mon.getDice().getNumber(),
+    printf("\nDice: %dd%d   Duration: %s\n", mon.getDice().getNumber(),
       mon.getDice().getType(), durations[mon.getDuration()]);
-    switch (mon.getType())
-    {
-     case BTSPELLTYPE_SCRYSIGHT:
-     case BTSPELLTYPE_DOORDETECT:
-     case BTSPELLTYPE_SUMMONILLUSION:
-     case BTSPELLTYPE_SUMMONMONSTER:
-     case BTSPELLTYPE_LIGHT:
-     case BTSPELLTYPE_TRAPDESTROY:
-//     case BTSPELLTYPE_HITBONUS:
-      printf("Effect: %s\n", mon.getEffect());
-      break;
-     default:
-      printf("Effect: %s <target>\n", mon.getEffect());
-      break;
-    }
-    printf("\n");
+*/    printf("\n");
    }
   }
  }
@@ -314,7 +325,7 @@ int main(int argc, char *argv[])
    for (i = 0; i < itmList.size(); i++)
    {
     BTItem &mon(itmList[i]);
-    printf("Name: %s\n", mon.getName());
+    printf("Name: %s\n", mon.getName().c_str());
     printf("Type: %s\n", itemTypes[mon.getType()]);
     printf("Price: %d   User class: Multiple\n", mon.getPrice());
     printf("Armor bonus: %d   Hit bonus: %d\n", mon.getArmorPlus(),
@@ -328,8 +339,8 @@ int main(int argc, char *argv[])
     else
      printf("Times useable: %d", mon.getTimesUsable());
     printf("   Spell cast: %s\n",
-      ((mon.getSpellCast() == -1) ? "(none)" :
-      splList[mon.getSpellCast()].getName()));
+      ((mon.getSpellCast() == BTITEMCAST_NONE) ? "(none)" :
+      splList[mon.getSpellCast()].getName().c_str()));
     printf("Cause: <member> %s <opponent>\n", mon.getCause());
     printf("Effect: %s <damage>\n", mon.getEffect());
     printf("\n");
@@ -352,7 +363,7 @@ int main(int argc, char *argv[])
   else
   {
    printf("Name: %s\n", gameMap.getName());
-   printf("Type: %s   Level: %d\n", mapTypes[gameMap.getType()], gameMap.getLevel());
+   printf("Type: %s   Level: %d\n", game.getPsuedo3DConfigList().getName(gameMap.getType()).c_str(), gameMap.getLevel());
    printf("Monster difficulty: %d   Chance of encounter: %d%%\n", gameMap.getMonsterLevel(), gameMap.getMonsterChance());
    printf("File: %s\n\n", gameMap.getFilename());
    for (y = 0; y < gameMap.getYSize(); y++)
@@ -462,6 +473,7 @@ int main(int argc, char *argv[])
    }
   }
  }
+ PHYSFS_deinit();
  return 0;
 }
 

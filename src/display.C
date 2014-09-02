@@ -10,6 +10,7 @@
 #include "game.h"
 #include "physfsrwops.h"
 #include <SDL_image.h>
+#include "boost/filesystem/operations.hpp"
 
 const char *BTDisplay::allKeys = "allKeys";
 
@@ -21,17 +22,25 @@ BTMusic::~BTMusic()
  }
 }
 
-BTDisplay::BTDisplay(BTDisplayConfig *c, bool physfs /*= true*/)
- : config(c), xMult(0), yMult(0), status(*this), textPos(0), p3d(0, 0), mainScreen(0), mainBackground(0), animation(0), ttffont(0), sfont(&simple8x8)
+BTSound::~BTSound()
 {
+ if (sound)
+ {
+  Mix_FreeChunk(sound);
+ }
+}
+
+BTDisplay::BTDisplay(BTDisplayConfig *c, bool physfs /*= true*/, int multiplier /*= 0*/)
+ : fullScreen(false), config(c), xMult(multiplier), yMult(multiplier), lockMult(multiplier), status(*this), textPos(0), p3d(this, 0, 0), mainScreen(0), mainBackground(0), picture(-1), ttffont(0), sfont(&simple8x8), mapXStart(0), mapYStart(0)
+{
+ animation.animation = 0;
+ animation.frame = 0;
  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
  {
   printf("Failed - SDL_Init\n");
   exit(0);
  }
-#if (SDL_MIXER_MAJOR_VERSION != 1) || (SDL_MIXER_MINOR_VERSION != 2) || (SDL_MIXER_PATCHLEVEL != 8)
  Mix_Init(MIX_INIT_FLAC | MIX_INIT_OGG);
-#endif
  const SDL_VideoInfo *info = SDL_GetVideoInfo();
  xFull = info->current_w;
  yFull = info->current_h;
@@ -43,8 +52,22 @@ BTDisplay::BTDisplay(BTDisplayConfig *c, bool physfs /*= true*/)
    xMult = yMult;
   else
    yMult = xMult;
-  p3d.setMultiplier(xMult, yMult);
  }
+ char *font = config->font;
+ int fontsize = config->fontsize;
+ expanded = config->findExpanded(xMult, yMult);
+ if (expanded)
+ {
+  xMult = ((xFull - 10) / (config->width * expanded->xMult)) * expanded->xMult; // Allow for window decoration
+  yMult = ((yFull - 10) / (config->height * expanded->yMult)) * expanded->yMult; // Allow for window decoration
+  if (xMult > yMult)
+   xMult = yMult;
+  else
+   yMult = xMult;
+  font = expanded->font;
+  fontsize = expanded->fontsize;
+ }
+ p3d.setMultiplier(xMult, yMult);
  label.x = config->label.x * xMult;
  label.y = config->label.y * yMult;
  label.w = config->label.w * xMult;
@@ -61,14 +84,20 @@ BTDisplay::BTDisplay(BTDisplayConfig *c, bool physfs /*= true*/)
  }
 #endif
  mainScreen = SDL_SetVideoMode(config->width * xMult, config->height * yMult, 32,
-   SDL_SWSURFACE /*| (fullScreen ? SDL_FULLSCREEN : 0)*/);
+   SDL_SWSURFACE | (fullScreen ? SDL_FULLSCREEN : 0));
  if (mainScreen == NULL)
  {
   printf("Failed - SDL_SetVideoMode\n");
   exit(0);
  }
-/* if (config->font)
-  ttffont = TTF_OpenFont("/usr/share/fonts/bitstream-vera/VeraMono.ttf", 6 * ((xMult == yMult) ? yMult : 1));*/
+#ifndef BTBUILDER_NOTTF
+ if (font)
+ {
+  SDL_RWops *f = PHYSFSRWOPS_openRead((std::string("fonts/") + font).c_str());
+  if (f)
+   ttffont = TTF_OpenFontRW(f, 1, fontsize);
+ }
+#endif
  white.r = 255;
  white.g = 255;
  white.b = 255;
@@ -98,10 +127,13 @@ BTDisplay::~BTDisplay()
   SDL_FreeSurface(mainBackground);
  }
  element.clear();
-#if (SDL_MIXER_MAJOR_VERSION != 1) || (SDL_MIXER_MINOR_VERSION != 2) || (SDL_MIXER_PATCHLEVEL != 8)
  Mix_Quit();
-#endif
  SDL_Quit();
+}
+
+void BTDisplay::addAnimation(MNG_AnimationState *animState, bool clear /*= false*/)
+{
+ activeAnimation.push_back(BTAnimation(animState, clear));
 }
 
 void BTDisplay::addBarrier(const char *keys)
@@ -184,7 +216,7 @@ void BTDisplay::addColumns(const std::list<std::string>& c)
  element.push_back(new BTUIMultiColumn(c));
 }
 
-void BTDisplay::addReadString(const char *prompt, int maxLen, std::string &response)
+void BTDisplay::addReadString(const std::string &prompt, int maxLen, std::string &response)
 {
  element.push_back(new BTUIReadString(prompt, maxLen, response));
 }
@@ -192,6 +224,11 @@ void BTDisplay::addReadString(const char *prompt, int maxLen, std::string &respo
 void BTDisplay::addSelection(selectItem *list, int size, int &start, int &select, int num /*= 0*/)
 {
  element.push_back(new BTUISelect(list, size, start, select, num));
+}
+
+void BTDisplay::addSelectImage(int &select)
+{
+ element.push_back(new BTUISelectImage(select));
 }
 
 void BTDisplay::clear(SDL_Rect &r, bool update /*= false*/)
@@ -207,6 +244,24 @@ void BTDisplay::clearElements()
   delete (*elementItr);
  }
  element.clear();
+}
+
+void BTDisplay::clearImage()
+{
+ picture = -1;
+ if (animation.animation)
+ {
+  IMG_FreeMNG(animation.animation);
+  animation.animation = NULL;
+  removeAnimation(&animation);
+ }
+ SDL_Rect dst;
+ dst.x = config->x3d * xMult;
+ dst.y = config->y3d * yMult;
+ dst.w = p3d.config->width * xMult;
+ dst.h = p3d.config->height * yMult;
+ SDL_FillRect(mainScreen, &dst, SDL_MapRGB(mainScreen->format, black.r, black.g, black.b));
+ SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
 }
 
 void BTDisplay::clearText()
@@ -244,42 +299,28 @@ void BTDisplay::drawFullScreen(const char *file, int delay)
 
 void BTDisplay::drawImage(int pic)
 {
+ picture = pic;
  char filename[50];
- if (animation)
+ if (animation.animation)
  {
-  IMG_FreeMNG(animation);
-  animation = NULL;
-  animationFrame = 0;
+  IMG_FreeMNG(animation.animation);
+  animation.animation = NULL;
+  removeAnimation(&animation);
  }
- snprintf(filename, 50, "image/slot%d.ng", pic);
+ snprintf(filename, 50, "slot%d.ng", pic);
  SDL_Rect src, dst;
  SDL_Surface *img = NULL;
- if (PHYSFS_exists(filename))
+ loadImageOrAnimation(filename, &img, &animation.animation);
+ if (animation.animation)
  {
-  SDL_RWops *f = PHYSFSRWOPS_openRead(filename);
-  if (IMG_isMNG(f))
-  {
-   animation = IMG_LoadMNG_RW(f);
-   if (animation)
-   {
-    if ((xMult > 1) || (yMult > 1))
-    {
-     for (int i = 0; i < animation->frame_count; ++i)
-     {
-      SDL_Surface *img2 = simpleZoomSurface(animation->frame[i], xMult, yMult);
-      SDL_FreeSurface(animation->frame[i]);
-      animation->frame[i] = img2;
-     }
-    }
-    drawAnimationFrame();
-    animationTime = SDL_GetTicks();
-    return;
-   }
-  }
-  else
-  {
-   img = IMG_Load_RW(f, 1);
-  }
+  IMG_SetAnimationState(&animation, -1, 0);
+  animation.dst.x = config->x3d * xMult;
+  animation.dst.y = config->y3d * yMult;
+  animation.dst.w = p3d.config->width * xMult;
+  animation.dst.h = p3d.config->height * yMult;
+  addAnimation(&animation);
+  drawAnimationFrame();
+  return;
  }
  if ((pic >= 45) && (img == NULL))
  {
@@ -307,6 +348,12 @@ void BTDisplay::drawImage(int pic)
     colors[c].g *= 4;
     colors[c].b *= 4;
    }
+   if ((xMult > 1) || (yMult > 1))
+   {
+    SDL_Surface *img2 = simpleZoomSurface(img, xMult, yMult);
+    SDL_FreeSurface(img);
+    img = img2;
+   }
   }
  }
  dst.x = config->x3d * xMult;
@@ -318,12 +365,6 @@ void BTDisplay::drawImage(int pic)
   SDL_FillRect(mainScreen, &dst, SDL_MapRGB(mainScreen->format, black.r, black.g, black.b));
   SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
   return;
- }
- if ((xMult > 1) || (yMult > 1))
- {
-  SDL_Surface *img2 = simpleZoomSurface(img, xMult, yMult);
-  SDL_FreeSurface(img);
-  img = img2;
  }
  src.x = 0;
  src.y = 0;
@@ -339,6 +380,7 @@ void BTDisplay::drawLabel(const char *name)
  int w, h;
  if (!sizeFont(name, w, h))
   return;
+ labelText = name;
  SDL_BlitSurface(mainBackground, &label, mainScreen, &label);
  drawFont(name, label, white, center);
  SDL_UpdateRect(mainScreen, label.x, label.y, label.w, label.h);
@@ -359,7 +401,7 @@ void BTDisplay::drawLast(const char *keys, const char *words, alignment a /*= le
  SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
 }
 
-void BTDisplay::drawMessage(const char *words, int delay)
+void BTDisplay::drawMessage(const char *words, int *delay)
 {
  addText(words);
  addText("");
@@ -430,14 +472,15 @@ void BTDisplay::drawText(const char *words, alignment a /*= left*/)
 
 void BTDisplay::drawView()
 {
- if (animation)
+ picture = -1;
+ if (animation.animation)
  {
-  IMG_FreeMNG(animation);
-  animation = NULL;
-  animationFrame = 0;
+  IMG_FreeMNG(animation.animation);
+  animation.animation = NULL;
+  removeAnimation(&animation);
  }
- BTGame *g = BTGame::getGame();
- p3d.draw(g, g->getX(), g->getY(), g->getFacing());
+ Psuedo3DMap *m = Psuedo3DMap::getMap();
+ p3d.draw(m, m->getX(), m->getY(), m->getFacing());
  SDL_Rect src, dst;
  src.x = 0;
  src.y = 0;
@@ -448,6 +491,9 @@ void BTDisplay::drawView()
  dst.w = p3d.config->width * xMult;
  dst.h = p3d.config->height * yMult;
  SDL_BlitSurface(p3d.getDisplay(), &src, mainScreen, &dst);
+ if ((config->mapDisplayMode == BTMAPDISPLAYMODE_ALWAYS) ||
+  ((config->mapDisplayMode == BTMAPDISPLAYMODE_NO3D) && (p3d.getConfig()->wallType.empty())))
+  drawMap(false);
  SDL_UpdateRect(mainScreen, 0, 0, 0, 0);
 }
 
@@ -456,10 +502,109 @@ void BTDisplay::drawIcons()
  for (int i = 0; i < config->icon.size(); ++i)
  {
   // Should cache this to not constantly redraw.
-  if (config->icon[i]->isActive())
-   config->icon[i]->draw(*this);
-  else
-   config->icon[i]->clear(*this);
+  config->icon[i]->draw(*this, SDL_GetTicks());
+ }
+}
+
+void BTDisplay::drawMap(bool knowledge)
+{
+ // Draw black
+ Psuedo3DMap *m = Psuedo3DMap::getMap();
+ SDL_Rect src, dst;
+ dst.x = config->xMap * xMult;
+ dst.y = config->yMap * yMult;
+ src.w = dst.w = config->widthMap * p3d.config->mapWidth * xMult;
+ src.h = dst.h = config->heightMap * p3d.config->mapHeight * yMult;
+ src.x = 0;
+ src.y = 0;
+ SDL_Surface *backup = NULL;
+ if (config->mapDisplayMode == BTMAPDISPLAYMODE_REQUEST)
+ {
+  backup = SDL_CreateRGBSurface(SDL_SWSURFACE, dst.w, dst.h, 32, mainScreen->format->Rmask, mainScreen->format->Gmask, mainScreen->format->Bmask, mainScreen->format->Amask);
+  SDL_BlitSurface(mainScreen, &dst, backup, &src);
+ }
+ SDL_FillRect(mainScreen, &dst, SDL_MapRGB(mainScreen->format, black.r, black.g, black.b));
+ if (config->centerMap)
+ {
+  mapXStart = m->getX() - (config->widthMap / 2);
+  mapYStart = m->getY() - (config->heightMap / 2);
+ }
+ else
+ {
+  int curX = m->getX();
+  if (mapXStart > curX)
+   mapXStart = curX;
+  if (mapXStart + config->widthMap <= curX)
+   mapXStart = curX - config->widthMap + 1;
+  int curY = m->getY();
+  if (mapYStart > curY)
+   mapYStart = curY;
+  if (mapYStart + config->heightMap <= curY)
+   mapYStart = curY - config->heightMap + 1;
+ }
+ for (int i = 0; i < config->widthMap; ++i)
+ {
+  for (int k = 0; k < config->heightMap; ++k)
+  {
+   src.x = 0;
+   src.y = 0;
+   src.w = p3d.config->mapWidth * xMult;
+   src.h = p3d.config->mapHeight * yMult;
+   dst.x = (config->xMap + (i * p3d.config->mapWidth)) * xMult;
+   dst.y = (config->yMap + (k * p3d.config->mapHeight)) * yMult;
+   dst.w = p3d.config->mapWidth * xMult;
+   dst.h = p3d.config->mapHeight * yMult;
+   int know = m->getKnowledge(mapXStart + i, mapYStart + k);
+   if ((mapXStart + i < 0) || (mapYStart + k < 0) || (mapXStart + i >= m->getXSize()) || (mapYStart + k >= m->getYSize()) || ((!knowledge) && (know == BTKNOWLEDGE_NO)))
+   {
+    SDL_Surface *unknown = p3d.getMapUnknown();
+    if (unknown)
+    {
+     SDL_BlitSurface(unknown, &src, mainScreen, &dst);
+    }
+   }
+   else
+   {
+    for (int direction = 0; direction < CARDINAL_DIRECTIONS; ++direction)
+    {
+     SDL_Surface *mapWall = p3d.getMapWall(m->getMapType(mapXStart + i, mapYStart + k, direction), direction, knowledge || (know == BTKNOWLEDGE_FULL));
+     if (mapWall)
+     {
+      SDL_BlitSurface(mapWall, &src, mainScreen, &dst);
+     }
+    }
+    if (m->hasSpecial(mapXStart + i, mapYStart + k))
+    {
+     SDL_Surface *special = p3d.getMapSpecial();
+     if (special)
+     {
+      SDL_BlitSurface(special, &src, mainScreen, &dst);
+     }
+    }
+    if ((mapYStart + k == m->getY()) && (mapXStart + i == m->getX()))
+    {
+     SDL_Surface *arrow = p3d.getMapArrow(m->getFacing());
+     if (arrow)
+     {
+      SDL_BlitSurface(arrow, &src, mainScreen, &dst);
+     }
+    }
+   }
+  }
+ }
+ dst.x = config->xMap * xMult;
+ dst.y = config->yMap * yMult;
+ src.w = dst.w = config->widthMap * p3d.config->mapWidth * xMult;
+ src.h = dst.h = config->heightMap * p3d.config->mapHeight * yMult;
+ src.x = 0;
+ src.y = 0;
+ SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
+ if (config->mapDisplayMode == BTMAPDISPLAYMODE_REQUEST)
+ {
+  unsigned char response = readChar();
+  SDL_BlitSurface(backup, &src, mainScreen, &dst);
+  SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
+  SDL_FreeSurface(backup);
  }
 }
 
@@ -467,6 +612,8 @@ void BTDisplay::drawStats()
 {
  int i;
  SDL_Rect dst;
+ if (config->statusInfo.size() == 0)
+  return;
  for (i = 0; i < BT_PARTYSIZE; ++i)
  {
   dst.x = config->status[i].x * xMult;
@@ -490,6 +637,16 @@ SDL_Color &BTDisplay::getBlack()
 BTDisplayConfig *BTDisplay::getConfig()
 {
  return config;
+}
+
+int BTDisplay::getCurrentImage()
+{
+ return picture;
+}
+
+std::string BTDisplay::getCurrentLabel()
+{
+ return labelText;
 }
 
 void BTDisplay::getMultiplier(int &x, int &y)
@@ -536,13 +693,46 @@ int BTDisplay::playMusic(const char *file, bool physfs /*= true*/)
  return musicID;
 }
 
-unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*= 0*/)
+void BTDisplay::playSound(const char *file, bool physfs /*= true*/)
+{
+ for (std::list<BTSound*>::iterator itr(sound.begin()); itr != sound.end(); )
+ {
+  // Look for finished sounds
+  if (0 == Mix_Playing((*itr)->channel))
+  {
+   Mix_FreeChunk((*itr)->sound);
+   itr = sound.erase(itr);
+  }
+  else
+   ++itr;
+ }
+ if ((file == NULL) || (file[0] == 0))
+ {
+  return ;
+ }
+ SDL_RWops *soundFile;
+ if (physfs)
+  soundFile = PHYSFSRWOPS_openRead(file);
+ else
+  soundFile = SDL_RWFromFile(file, "rb");
+ if (soundFile)
+ {
+  Mix_Chunk *soundObj = Mix_LoadWAV_RW(soundFile, 1);
+  if (soundObj)
+  {
+   sound.push_back(new BTSound(soundObj, Mix_PlayChannel(-1, soundObj, 0)));
+  }
+ }
+ return ;
+}
+
+unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int *delay /*= 0*/, int delayOveride /*= -1*/)
 {
  unsigned int key;
  std::vector<BTUIElement*>::iterator top = element.begin();
  for (; top != element.end(); ++top)
  {
-  if ((BTUI_SELECT == (*top)->getType()) || (BTUI_BARRIER == (*top)->getType()) || (BTUI_READSTRING == (*top)->getType()))
+  if ((BTUI_SELECT == (*top)->getType()) || (BTUI_BARRIER == (*top)->getType()) || (BTUI_READSTRING == (*top)->getType()) || (BTUI_SELECTIMAGE == (*top)->getType()))
   {
    break;
   }
@@ -607,7 +797,14 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
   {
    BTUIReadString *item = static_cast<BTUIReadString*>(*top);
    SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
-   item->response = readString(item->prompt.c_str(), item->maxLen);
+   item->response = readString(item->prompt.c_str(), item->maxLen, item->response);
+   return 13;
+  }
+  else if (BTUI_SELECTIMAGE == (*top)->getType())
+  {
+   BTUISelectImage *item = static_cast<BTUISelectImage*>(*top);
+   SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
+   item->select = selectImage(item->select);
    return 13;
   }
   else if (BTUI_SELECT == (*top)->getType())
@@ -617,6 +814,7 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
    select->position.y = text.y + textPos;
    select->position.w = text.w;
    select->position.h = bottomPos - textPos;
+   select->sanitize(*this);
   }
  }
  if (!select)
@@ -626,6 +824,8 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
    select->draw(*this);
    SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
  }
+ int start = SDL_GetTicks();
+ int delayCurrent = ((delayOveride != -1) ? delayOveride : (delay ? *delay : 0));
  while (true)
  {
   if ((select) && (!select->numbered))
@@ -633,7 +833,7 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
    select->draw(*this);
    SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
   }
-  key = readChar(delay);
+  key = readChar(delayCurrent);
   if ((key == 0) || (key == 27))
    break;
   if (select)
@@ -662,6 +862,16 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
      select->moveDown(*this);
      continue;
     }
+    else if (key == BTKEY_PGUP)
+    {
+     select->pageUp(*this);
+     continue;
+    }
+    else if (key == BTKEY_PGDN)
+    {
+     select->pageDown(*this);
+     continue;
+    }
     else if ((key == 13) && (select->select >= 0))
      break;
    }
@@ -685,7 +895,28 @@ unsigned int BTDisplay::process(const char *specialKeys /*= NULL*/, int delay /*
      return key;
    }
   }
-  if (specialKeys == allKeys)
+  if ((key == '+') || (key == '-'))
+  {
+   if (key == '+')
+   {
+    if ((delay) && ((*delay) > 100))
+     *delay = (*delay) - 300;
+   }
+   if (key == '-')
+   {
+    if ((delay) && ((*delay) < 4000))
+     *delay = (*delay) + 300;
+   }
+   int end = SDL_GetTicks();
+   if (delayCurrent)
+   {
+    if (end - start > delayCurrent)
+     return 0;
+    else
+     delayCurrent -= end - start;
+   }
+  }
+  else if (specialKeys == allKeys)
    return key;
   else if (specialKeys)
   {
@@ -704,18 +935,7 @@ unsigned int BTDisplay::readChar(int delay /*= 0*/)
  SDL_Event sdlevent;
  SDL_TimerID timer;
  unsigned long animationDelay = 0;
- if (animation)
- {
-  unsigned long currentTime = SDL_GetTicks();
-  if (currentTime - animationTime > animation->frame_delay[animationFrame])
-  {
-   ++animationFrame;
-   animationFrame = animationFrame % animation->frame_count;
-   drawAnimationFrame();
-   animationTime = currentTime;
-  }
-  animationDelay = animation->frame_delay[animationFrame] - (currentTime - animationTime);
- }
+ animationDelay = drawAnimationFrame();
  if ((animationDelay) && ((delay == 0) || (animationDelay < delay)))
   timer = SDL_AddTimer(animationDelay, timerCallback, NULL);
  else if (delay)
@@ -737,22 +957,35 @@ unsigned int BTDisplay::readChar(int delay /*= 0*/)
     return BTKEY_LEFT;
    else if ((sdlevent.key.keysym.sym == SDLK_RIGHT) || (sdlevent.key.keysym.sym == SDLK_KP6))
     return BTKEY_RIGHT;
+   else if ((sdlevent.key.keysym.sym == SDLK_PAGEDOWN) || (sdlevent.key.keysym.sym == SDLK_KP3))
+    return BTKEY_PGDN;
+   else if ((sdlevent.key.keysym.sym == SDLK_PAGEUP) || (sdlevent.key.keysym.sym == SDLK_KP9))
+    return BTKEY_PGUP;
+   else if ((sdlevent.key.keysym.sym == SDLK_END) || (sdlevent.key.keysym.sym == SDLK_KP1))
+    return BTKEY_END;
+   else if ((sdlevent.key.keysym.sym == SDLK_INSERT) || (sdlevent.key.keysym.sym == SDLK_KP0))
+    return BTKEY_INS;
+   else if ((sdlevent.key.keysym.sym == SDLK_KP_PERIOD) || (sdlevent.key.keysym.sym == SDLK_DELETE))
+    return BTKEY_DEL;
+   else if (sdlevent.key.keysym.sym == SDLK_F12)
+    toggleFullScreen();
    if ((animationDelay) && ((delay == 0) || (animationDelay < delay)))
     timer = SDL_AddTimer(animationDelay, timerCallback, NULL);
    else if (delay)
     timer = SDL_AddTimer(delay, timerCallback, NULL);
   }
+  else if (sdlevent.type == SDL_QUIT)
+  {
+   Mix_Quit();
+   SDL_Quit();
+   exit(0);
+  }
   else if (sdlevent.type == SDL_USEREVENT)
   {
    if ((animationDelay) && ((delay == 0) || (animationDelay < delay)))
    {
-    unsigned long currentTime = SDL_GetTicks();
     delay -= animationDelay;
-    ++animationFrame;
-    animationFrame = animationFrame % animation->frame_count;
-    drawAnimationFrame();
-    animationTime = currentTime;
-    animationDelay = animation->frame_delay[animationFrame];
+    animationDelay = drawAnimationFrame();
     if ((animationDelay) && ((delay == 0) || (animationDelay < delay)))
      timer = SDL_AddTimer(animationDelay, timerCallback, NULL);
     else if (delay)
@@ -764,47 +997,49 @@ unsigned int BTDisplay::readChar(int delay /*= 0*/)
  }
 }
 
-std::string BTDisplay::readString(const char *prompt, int max)
+std::string BTDisplay::readString(const char *prompt, int max, const std::string &initial)
 {
- std::string s;
+ std::string s = initial;
  int w, h;
  sizeFont(s.c_str(), w, h);
  if (h + textPos > text.h)
   scrollUp(h);
  unsigned char key;
- int len = 0;
+ int len = s.length();
  SDL_Rect dst;
  dst.h = h;
- if (0 != *prompt)
- {
-  sizeFont(prompt, w, h);
-  dst.x = text.x;
-  dst.y = text.y + textPos;
-  dst.w = w;
-  SDL_BlitSurface(mainBackground, &dst, mainScreen, &dst);
-  drawFont(prompt, dst, black, left);
- }
- dst.x = text.x + w;
+ int startPos = textPos;
+ std::string full = prompt;
+ full += s;
+ dst.x = text.x;
  dst.y = text.y + textPos;
- dst.w = text.w - w;
- SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
+ dst.w = text.w;
+ drawText(full.c_str());
+ int endPos = textPos;
  while (((key = readChar()) != 13) && (key !=  27))
  {
   if (key == 8)
   {
    if (len > 0)
+   {
     s.erase(--len);
+    full.erase(full.length() - 1);
+   }
   }
   else if ((len < max) && (key >= ' ') && (key <= '~'))
   {
    s.push_back(key);
+   full.push_back(key);
    ++len;
   }
+  dst.h = endPos - startPos;
   SDL_BlitSurface(mainBackground, &dst, mainScreen, &dst);
-  drawFont(s.c_str(), dst, black, left);
-  SDL_UpdateRect(mainScreen, text.x, text.y, text.w, text.h);
+  textPos = startPos;
+  drawText(full.c_str());
+  if (textPos > endPos)
+   endPos = textPos;
+  SDL_UpdateRect(mainScreen, text.x, text.y, text.w, endPos - startPos);
  }
- textPos += h;
  return s;
 }
 
@@ -815,6 +1050,78 @@ void BTDisplay::refresh()
  SDL_UpdateRect(mainScreen, 0, 0, 0, 0);
 }
 
+void BTDisplay::removeAnimation(MNG_AnimationState *animState)
+{
+ activeAnimation.remove(BTAnimation(animState, false));
+}
+
+int BTDisplay::selectImage(int initial)
+{
+ char sz[50];
+ snprintf(sz, 50, "%d", initial);
+ std::string s = sz;
+ int w, h;
+ sizeFont(s.c_str(), w, h);
+ if (h + textPos > text.h)
+  scrollUp(h);
+ unsigned char key;
+ int len = s.length();
+ SDL_Rect dst;
+ dst.h = h;
+ int startPos = textPos;
+ std::string full;
+ full += s;
+ dst.x = text.x;
+ dst.y = text.y + textPos;
+ dst.w = text.w;
+ drawText(full.c_str());
+ int endPos = textPos;
+ int current = initial;
+ drawImage(current);
+ while (((key = readChar()) != 13) && (key !=  27))
+ {
+  if (key == 8)
+  {
+   if (len > 0)
+   {
+    s.erase(--len);
+    full.erase(full.length() - 1);
+   }
+   current = atol(s.c_str());
+  }
+  else if ((len < 50) && (key >= '0') && (key <= '9'))
+  {
+   s.push_back(key);
+   full.push_back(key);
+   ++len;
+   current = atol(s.c_str());
+  }
+  else if ((key == '+') || (key == BTKEY_UP))
+  {
+   ++current;
+   snprintf(sz, 50, "%d", current);
+   full = s = sz;
+  }
+  else if ((key == '-') || (key == BTKEY_DOWN))
+  {
+   --current;
+   snprintf(sz, 50, "%d", current);
+   full = s = sz;
+  }
+  else
+   continue;
+  dst.h = endPos - startPos;
+  SDL_BlitSurface(mainBackground, &dst, mainScreen, &dst);
+  textPos = startPos;
+  drawText(full.c_str());
+  if (textPos > endPos)
+   endPos = textPos;
+  SDL_UpdateRect(mainScreen, text.x, text.y, text.w, endPos - startPos);
+  drawImage(current);
+ }
+ return ((key == 27) ? initial : current);
+}
+
 void BTDisplay::setBackground(const char *file, bool physfs /*= true*/)
 {
  if (mainBackground)
@@ -822,31 +1129,45 @@ void BTDisplay::setBackground(const char *file, bool physfs /*= true*/)
   SDL_FreeSurface(mainBackground);
   mainBackground = NULL;
  }
- SDL_RWops *f = NULL;
- if (physfs)
-  f = PHYSFSRWOPS_openRead(file);
- else
-  f = SDL_RWFromFile(file, "rb");
- SDL_Surface *img = IMG_Load_RW(f, 1);
- if ((xMult > 1) || (yMult > 1))
- {
-  mainBackground = simpleZoomSurface(img, xMult, yMult);
-  SDL_FreeSurface(img);
- }
- else
-  mainBackground = img;
+ loadImageOrAnimation(file, &mainBackground, NULL, physfs);
  SDL_BlitSurface(mainBackground, NULL, mainScreen, NULL);
  SDL_UpdateRect(mainScreen, 0, 0, 0, 0);
 }
 
 void BTDisplay::setConfig(BTDisplayConfig *c)
 {
- int newXMult = (xFull - 10) / c->width; // Allow for window decoration
- int newYMult = (yFull - 10) / c->height; // Allow for window decoration
- if (newXMult > newYMult)
-  newXMult = newYMult;
- else
-  newYMult = newXMult;
+ picture = -1;
+ if (animation.animation)
+ {
+  IMG_FreeMNG(animation.animation);
+  animation.animation = NULL;
+  removeAnimation(&animation);
+ }
+ int newXMult = lockMult;
+ int newYMult = lockMult;
+ if ((newXMult == 0) || (newYMult == 0))
+ {
+  newXMult = (xFull - 10) / c->width; // Allow for window decoration
+  newYMult = (yFull - 10) / c->height; // Allow for window decoration
+  if (newXMult > newYMult)
+   newXMult = newYMult;
+  else
+   newYMult = newXMult;
+ }
+ char *font = c->font;
+ int fontsize = c->fontsize;
+ expanded = c->findExpanded(newXMult, newYMult);
+ if (expanded)
+ {
+  newXMult = ((xFull - 10) / (c->width * expanded->xMult)) * expanded->xMult; // Allow for window decoration
+  newYMult = ((yFull - 10) / (c->height * expanded->yMult)) * expanded->yMult; // Allow for window decoration
+  if (newXMult > newYMult)
+   newXMult = newYMult;
+  else
+   newYMult = newXMult;
+  font = expanded->font;
+  fontsize = expanded->fontsize;
+ }
  p3d.setMultiplier(newXMult, newYMult);
  label.x = c->label.x * newXMult;
  label.y = c->label.y * newYMult;
@@ -859,7 +1180,7 @@ void BTDisplay::setConfig(BTDisplayConfig *c)
  if ((config->width * xMult != c->width * newXMult) || (config->height * yMult != c->height * newYMult))
  {
   mainScreen = SDL_SetVideoMode(c->width * newXMult, c->height * newYMult, 32,
-    SDL_SWSURFACE /*| (fullScreen ? SDL_FULLSCREEN : 0)*/);
+    SDL_SWSURFACE | (fullScreen ? SDL_FULLSCREEN : 0));
   if (mainScreen == NULL)
   {
    printf("Failed - SDL_SetVideoMode\n");
@@ -869,22 +1190,35 @@ void BTDisplay::setConfig(BTDisplayConfig *c)
  config = c;
  xMult = newXMult;
  yMult = newYMult;
-/* if (config->font)
-  ttffont = TTF_OpenFont("/usr/share/fonts/bitstream-vera/VeraMono.ttf", 6 * ((xMult == yMult) ? yMult : 1));*/
+#ifndef BTBUILDER_NOTTF
+ if (font)
+ {
+  SDL_RWops *f = PHYSFSRWOPS_openRead((std::string("fonts/") + font).c_str());
+  if (f)
+   ttffont = TTF_OpenFontRW(f, 1, fontsize);
+ }
+ else if (ttffont)
+ {
+  TTF_CloseFont(ttffont);
+  ttffont = 0;
+ }
+#endif
  setBackground(c->background);
 }
 
-void BTDisplay::setPsuedo3DConfig(const char *file)
+void BTDisplay::setPsuedo3DConfig(Psuedo3DConfigList *p3dl)
 {
- Psuedo3DConfig::readXML(file, p3dConfig);
+ p3dConfig = p3dl;
+ p3d.setConfig(NULL);
 }
 
-void BTDisplay::setWallGraphics(int type)
+Psuedo3DConfig *BTDisplay::setWallGraphics(int type)
 {
- if (p3dConfig.size() > type)
-  p3d.setConfig(p3dConfig[type]);
+ if (p3dConfig->size() > type)
+  p3d.setConfig((*p3dConfig)[type]);
  else
-  p3d.setConfig(p3dConfig[0]);
+  p3d.setConfig((*p3dConfig)[0]);
+ return p3d.getConfig();
 }
 
 bool BTDisplay::sizeFont(const char *text, int &w, int &h)
@@ -899,6 +1233,7 @@ bool BTDisplay::sizeFont(const char *text, int &w, int &h)
   }
   else if (TTF_SizeUTF8(ttffont, text, &w, &h) == -1)
     return false;
+  h = h-1;
  }
  else
 #endif
@@ -956,6 +1291,29 @@ void BTDisplay::stopMusic(int id)
    }
   }
  }
+}
+
+void BTDisplay::toggleFullScreen()
+{
+ fullScreen = !fullScreen;
+ SDL_Rect src, dst;
+ dst.x = config->xMap * xMult;
+ dst.y = config->yMap * yMult;
+ src.w = dst.w = config->width * xMult;
+ src.h = dst.h = config->height * yMult;
+ src.x = dst.x = 0;
+ src.y = dst.y = 0;
+ SDL_Surface *backup = SDL_CreateRGBSurface(SDL_SWSURFACE, dst.w, dst.h, 32, mainScreen->format->Rmask, mainScreen->format->Gmask, mainScreen->format->Bmask, mainScreen->format->Amask);
+ SDL_BlitSurface(mainScreen, &dst, backup, &src);
+ mainScreen = SDL_SetVideoMode(config->width * xMult, config->height * yMult, 32,
+    SDL_SWSURFACE | (fullScreen ? SDL_FULLSCREEN : 0));
+ if (mainScreen == NULL)
+ {
+  printf("Failed - SDL_SetVideoMode\n");
+  exit(0);
+ }
+ SDL_BlitSurface(backup, &src, mainScreen, &dst);
+ SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
 }
 
 void BTDisplay::drawFont(const char *text, SDL_Rect &dst, SDL_Color c, alignment a)
@@ -1021,19 +1379,117 @@ void BTDisplay::drawRect(SDL_Rect &dst, SDL_Color c)
  SDL_FillRect(mainScreen, &dst, SDL_MapRGB(mainScreen->format, c.r, c.g, c.b));
 }
 
-void BTDisplay::drawAnimationFrame()
+void BTDisplay::loadImageOrAnimation(const char *file, SDL_Surface **img, MNG_Image **animation, bool physfs /*= true*/)
 {
- SDL_Rect src, dst;
- dst.x = config->x3d * xMult;
- dst.y = config->y3d * yMult;
- dst.w = p3d.config->width * xMult;
- dst.h = p3d.config->height * yMult;
- src.x = 0;
- src.y = 0;
- src.w = p3d.config->width * xMult;
- src.h = p3d.config->height * yMult;
- SDL_BlitSurface(animation->frame[animationFrame], &src, mainScreen, &dst);
- SDL_UpdateRect(mainScreen, dst.x, dst.y, dst.w, dst.h);
+ if (expanded)
+ {
+  std::string filename = "image/";
+  filename += expanded->directory;
+  filename += "/";
+  filename += file;
+  bool exists = false;
+  if (physfs)
+   exists = PHYSFS_exists(filename.c_str());
+  else
+   exists = boost::filesystem::exists(filename.c_str());
+  if (exists)
+  {
+   SDL_RWops *f = NULL;
+   if (physfs)
+    f = PHYSFSRWOPS_openRead(filename.c_str());
+   else
+    f = SDL_RWFromFile(filename.c_str(), "rb");
+   if (IMG_isMNG(f))
+   {
+    if (animation)
+    {
+     *animation = IMG_LoadMNG_RW(f);
+     if (*animation)
+     {
+      if (((xMult / expanded->xMult) > 1) || ((yMult / expanded->yMult) > 1))
+      {
+       simpleZoomAnimation(*animation, xMult / expanded->xMult, yMult / expanded->yMult);
+      }
+      return;
+     }
+    }
+    else
+     SDL_RWclose(f);
+   }
+   else
+   {
+    *img = IMG_Load_RW(f, 1);
+    if (((xMult / expanded->xMult) > 1) || ((yMult / expanded->yMult) > 1))
+    {
+     SDL_Surface *img2 = simpleZoomSurface(*img, xMult / expanded->xMult, yMult / expanded->yMult);
+     SDL_FreeSurface(*img);
+     *img = img2;
+    }
+    return;
+   }
+  }
+ }
+ std::string filename = "image/";
+ filename += file;
+ bool exists = false;
+ if (physfs)
+  exists = PHYSFS_exists(filename.c_str());
+ else
+  exists = boost::filesystem::exists(filename.c_str());
+ if (exists)
+ {
+  SDL_RWops *f = NULL;
+  if (physfs)
+   f = PHYSFSRWOPS_openRead(filename.c_str());
+  else
+   f = SDL_RWFromFile(filename.c_str(), "rb");
+  if (IMG_isMNG(f))
+  {
+   if (animation)
+   {
+    *animation = IMG_LoadMNG_RW(f);
+    if (*animation)
+    {
+     if ((xMult > 1) || (yMult > 1))
+     {
+      simpleZoomAnimation(*animation, xMult, yMult);
+     }
+    }
+   }
+   else
+    SDL_RWclose(f);
+  }
+  else
+  {
+   *img = IMG_Load_RW(f, 1);
+   if ((xMult > 1) || (yMult > 1))
+   {
+    SDL_Surface *img2 = simpleZoomSurface(*img, xMult, yMult);
+    SDL_FreeSurface(*img);
+    *img = img2;
+   }
+  }
+ }
+}
+
+unsigned long BTDisplay::drawAnimationFrame()
+{
+ unsigned long ticks = SDL_GetTicks();
+ unsigned long next = 0;
+ for (std::list<BTAnimation>::iterator itr = activeAnimation.begin(); itr != activeAnimation.end(); itr++)
+ {
+  SDL_Surface *nextImg = IMG_TimeUpdate(itr->animation, ticks);
+  if (nextImg)
+  {
+   if (itr->clear)
+    clear(itr->animation->dst, false);
+   drawImage(itr->animation->dst, nextImg);
+  }
+  unsigned long possible = IMG_TimeToNextFrame(itr->animation, ticks);
+  if ((next == 0) || (possible < next))
+   next = possible;
+ }
+ return next;
 }
 
 void BTDisplay::scrollUp(int h)
@@ -1093,6 +1549,8 @@ void BTUISelect::draw(BTDisplay &d)
  SDL_Rect dst;
  d.sizeFont("", wFirst, h);
  lines = position.h / h;
+ if (select >= start + lines)
+  start = select - lines - 1;
  d.clear(position);
  dst.y = position.y;
  dst.h = h;
@@ -1111,8 +1569,8 @@ void BTUISelect::draw(BTDisplay &d)
    d.drawFont(tmp, dst, d.getBlack(), BTDisplay::left);
    dst.x += wFirst;
    dst.w = position.w - wFirst;
-   if (list[i].name)
-    d.drawFont(list[i].name, dst, d.getBlack(), BTDisplay::left);
+   if (!list[i].name.empty())
+    d.drawFont(list[i].name.c_str(), dst, d.getBlack(), BTDisplay::left);
    dst.y += h;
   }
   for (; i < numbered; ++i)
@@ -1144,7 +1602,7 @@ void BTUISelect::draw(BTDisplay &d)
    tmp[0] = list[i].first;
    tmp[1] = 0;
    d.drawFont(tmp, dst, ((select != i) ? d.getBlack() : d.getWhite()), BTDisplay::left);
-   if (list[i].value)
+   if ((list[i].value) && (list[i].flags.isSet(BTSELECTFLAG_SHOWVALUE)))
    {
     snprintf(tmp, 20, "%d", list[i].value);
     d.sizeFont(tmp, wValue, hTmp);
@@ -1155,8 +1613,8 @@ void BTUISelect::draw(BTDisplay &d)
     wValue = 0;
    dst.x += wFirst;
    dst.w = position.w - wValue - wFirst;
-   if (list[i].name)
-    d.drawFont(list[i].name, dst, ((select != i) ? d.getBlack() : d.getWhite()), BTDisplay::left);
+   if (!list[i].name.empty())
+    d.drawFont(list[i].name.c_str(), dst, ((select != i) ? d.getBlack() : d.getWhite()), BTDisplay::left);
    dst.y += h;
   }
  }
@@ -1170,6 +1628,8 @@ void BTUISelect::moveDown(BTDisplay &d)
  if (select + 1 < size)
  {
   ++select;
+  while ((select + 1 < size) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   ++select;
   if (start + lines <= select)
    start = select - lines + 1;
  }
@@ -1180,8 +1640,73 @@ void BTUISelect::moveUp(BTDisplay &d)
  if (select > 0)
  {
   --select;
+  while ((select > 0) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   --select;
   if (start > select)
    start = select;
+ }
+}
+
+void BTUISelect::pageDown(BTDisplay &d)
+{
+ int wFirst, h, lines;
+ d.sizeFont("", wFirst, h);
+ lines = position.h / h;
+ select += lines;
+ if (select >= size)
+  select = size - 1;
+ start += lines;
+ if (start + lines >= size)
+  start = size - lines;
+ if (start < 0)
+  start = 0;
+ if (start + (lines / 2) > select)
+ {
+  while ((select > 0) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   --select;
+ }
+ else
+ {
+  while ((select + 1 < size) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   ++select;
+ }
+}
+
+void BTUISelect::pageUp(BTDisplay &d)
+{
+ int wFirst, h, lines;
+ d.sizeFont("", wFirst, h);
+ lines = position.h / h;
+ if (select - lines < 0)
+  select = 0;
+ else
+  select -= lines;
+ if (start - lines < 0)
+  start = 0;
+ else
+  start -= lines;
+ if (start + (lines / 2) > select)
+ {
+  while ((select > 0) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   --select;
+ }
+ else
+ {
+  while ((select + 1 < size) && (list[select].flags.isSet(BTSELECTFLAG_UNSELECTABLE)))
+   ++select;
+ }
+}
+
+void BTUISelect::sanitize(BTDisplay &d)
+{
+ int wFirst, h, lines;
+ d.sizeFont("", wFirst, h);
+ lines = position.h / h;
+ if (start > select)
+  start = select;
+ else if (start + lines <= select)
+ {
+  start = select - (lines - 1);
  }
 }
 

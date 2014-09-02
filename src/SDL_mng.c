@@ -106,7 +106,9 @@ MNG_Image *IMG_LoadMNG(const char *file)
             return NULL;
     }
 
-    return( MNG_iterate_chunks(src) );
+    MNG_Image *result = MNG_iterate_chunks(src);
+    SDL_RWclose(src);
+    return result;
 }
 
 MNG_Image *IMG_LoadMNG_RW(SDL_RWops *src)
@@ -139,7 +141,9 @@ MNG_Image *IMG_LoadMNG_RW(SDL_RWops *src)
             return NULL;
     }
 
-    return( MNG_iterate_chunks(src) );
+    MNG_Image *result = MNG_iterate_chunks(src);
+    SDL_RWclose(src);
+    return result;
 }
 
 /* Read a byte from the src stream */
@@ -278,7 +282,7 @@ MNG_Image *MNG_iterate_chunks(SDL_RWops *src)
                 break;
 
 	    case MNG_UINT_FRAM:
-		frame_delay = read_FRAM(&current_chunk);
+		frame_delay = read_FRAM(&current_chunk) * 1000 / image->mhdr.Ticks_per_second;
 		break;
 
             default:
@@ -376,7 +380,7 @@ SDL_Surface *MNG_read_frame(SDL_RWops *src)
 	 * the normal method of doing things with libpng).  REQUIRED unless you
 	 * set up your own error handlers in png_create_read_struct() earlier.
 	 */
-	if ( setjmp(png_ptr->jmpbuf) ) {
+	if ( setjmp(png_jmpbuf(png_ptr)) ) {
 		SDL_SetError("Error reading the PNG file.");
 		goto done;
 	}
@@ -448,9 +452,9 @@ SDL_Surface *MNG_read_frame(SDL_RWops *src)
 			Rmask = 0x000000FF;
 			Gmask = 0x0000FF00;
 			Bmask = 0x00FF0000;
-			Amask = (info_ptr->channels == 4) ? 0xFF000000 : 0;
+			Amask = (png_get_channels(png_ptr, info_ptr) == 4) ? 0xFF000000 : 0;
 		} else {
-		        int s = (info_ptr->channels == 4) ? 0 : 8;
+		        int s = (png_get_channels(png_ptr, info_ptr) == 4) ? 0 : 8;
 			Rmask = 0xFF000000 >> s;
 			Gmask = 0x00FF0000 >> s;
 			Bmask = 0x0000FF00 >> s;
@@ -458,7 +462,7 @@ SDL_Surface *MNG_read_frame(SDL_RWops *src)
 		}
 	}
 	surface = SDL_AllocSurface(SDL_SWSURFACE, width, height,
-			bit_depth*info_ptr->channels, Rmask,Gmask,Bmask,Amask);
+			bit_depth*png_get_channels(png_ptr, info_ptr), Rmask,Gmask,Bmask,Amask);
 	if ( surface == NULL ) {
 		SDL_SetError("Out of memory");
 		goto done;
@@ -495,22 +499,31 @@ SDL_Surface *MNG_read_frame(SDL_RWops *src)
 
 	/* Load the palette, if any */
 	palette = surface->format->palette;
-	if ( palette ) {
-	    if(color_type == PNG_COLOR_TYPE_GRAY) {
-		palette->ncolors = 256;
-		for(i = 0; i < 256; i++) {
-		    palette->colors[i].r = i;
-		    palette->colors[i].g = i;
-		    palette->colors[i].b = i;
+	if ( palette )
+	{
+		if(color_type == PNG_COLOR_TYPE_GRAY)
+		{
+			palette->ncolors = 256;
+			for(i = 0; i < 256; i++) {
+				palette->colors[i].r = i;
+				palette->colors[i].g = i;
+				palette->colors[i].b = i;
+			}
 		}
-	    } else if (info_ptr->num_palette > 0 ) {
-		palette->ncolors = info_ptr->num_palette; 
-		for( i=0; i<info_ptr->num_palette; ++i ) {
-		    palette->colors[i].b = info_ptr->palette[i].blue;
-		    palette->colors[i].g = info_ptr->palette[i].green;
-		    palette->colors[i].r = info_ptr->palette[i].red;
+		else
+		{
+			png_colorp info_palette;
+			int num_palette;
+			png_get_PLTE(png_ptr, info_ptr, &info_palette, &num_palette);
+			if (num_palette > 0 ) {
+				palette->ncolors = num_palette; 
+				for( i=0; i<num_palette; ++i ) {
+					palette->colors[i].b = info_palette[i].blue;
+					palette->colors[i].g = info_palette[i].green;
+					palette->colors[i].r = info_palette[i].red;
+				}
+			}
 		}
-	    }
 	}
 
 done:	/* Clean up and return */
@@ -521,3 +534,28 @@ done:	/* Clean up and return */
 	}
 	return(surface); 
 }
+
+void IMG_SetAnimationState(MNG_AnimationState *state, int frame, int ticks)
+{
+	state->frame = frame;
+	state->ticks = ticks;
+}
+
+unsigned long IMG_TimeToNextFrame(MNG_AnimationState *state, int ticks)
+{
+	return state->animation->frame_delay[state->frame] - (ticks - state->ticks);
+}
+
+SDL_Surface *IMG_TimeUpdate(MNG_AnimationState *state, int ticks)
+{
+	if ((state->frame == -1) || (state->animation->frame_delay[state->frame] <= (ticks - state->ticks)))
+	{
+		state->frame++;
+		state->frame = state->frame % state->animation->frame_count;
+		state->ticks = ticks;
+		return state->animation->frame[state->frame];
+	}
+	else
+		return NULL;
+}
+

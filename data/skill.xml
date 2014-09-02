@@ -21,24 +21,88 @@
 	</skill>
 	<skill>
 		<name>Critical hit</name>
-		<use>autocombat</use>
+		<use>autocombat-melee</use>
 		<effect>Critical hit</effect>
+		<roll><n>1</n><d>100</d><m>0</m></roll>
+		<defaultDifficulty>101</defaultDifficulty>
 	</skill>
 	<skill>
 		<name>Hide in shadows</name>
 		<use>combat</use>
 		<special>hide</special>
+		<roll><n>1</n><d>100</d><m>0</m></roll>
+		<defaultDifficulty>101</defaultDifficulty>
+		<common>jumps into the shadows,</common>
+		<success>and succeeds!</success>
+		<failure>but is discovered!</failure>
 	</skill>
 	<skill>
 		<name>Disarm trap</name>
 		<use>special</use>
 		<special>disarm</special>
+		<roll><n>1</n><d>100</d><m>0</m></roll>
+		<defaultDifficulty>101</defaultDifficulty>
 	</skill>
 	<skill>
 		<name>Bard song</name>
 		<use>any</use>
 		<limited>true</limited>
 		<special>song</special>
+	</skill>
+	<skill>
+		<name>Martial arts</name>
+		<use>special</use>
+		<special>barehands</special>
+		<roll><n>1</n><d>2</d></roll>
+		<roll><n>2</n><d>2</d></roll>
+		<roll><n>3</n><d>2</d></roll>
+		<roll><n>4</n><d>2</d></roll>
+		<roll><n>5</n><d>2</d></roll>
+		<roll><n>4</n><d>4</d></roll>
+		<roll><n>4</n><d>4</d></roll>
+		<roll><n>5</n><d>4</d></roll>
+		<roll><n>5</n><d>4</d></roll>
+		<roll><n>6</n><d>4</d></roll>
+		<roll><n>6</n><d>4</d></roll>
+		<roll><n>6</n><d>4</d></roll>
+		<roll><n>6</n><d>4</d></roll>
+		<roll><n>7</n><d>4</d></roll>
+		<roll><n>7</n><d>4</d></roll>
+		<roll><n>7</n><d>4</d></roll>
+		<roll><n>5</n><d>8</d></roll>
+		<roll><n>5</n><d>8</d></roll>
+		<roll><n>5</n><d>8</d></roll>
+		<roll><n>5</n><d>8</d></roll>
+		<roll><n>6</n><d>8</d></roll>
+		<roll><n>6</n><d>8</d></roll>
+		<roll><n>6</n><d>8</d></roll>
+		<roll><n>6</n><d>8</d></roll>
+		<roll><n>7</n><d>8</d></roll>
+		<roll><n>7</n><d>8</d></roll>
+		<roll><n>7</n><d>8</d></roll>
+		<roll><n>9</n><d>8</d></roll>
+		<roll><n>9</n><d>8</d></roll>
+		<roll><n>9</n><d>8</d></roll>
+		<roll><n>11</n><d>8</d></roll>
+		<roll><n>13</n><d>8</d></roll>
+	</skill>
+	<skill>
+		<name>Sneak Attack</name>
+		<use>autocombat-melee</use>
+		<effect>Critical hit</effect>
+		<after>Hide in shadows</after>
+		<roll><n>1</n><d>100</d><m>0</m></roll>
+		<defaultDifficulty>101</defaultDifficulty>
+	</skill>
+	<skill>
+		<name>Run</name>
+		<use>combat</use>
+		<special>run</special>
+		<roll><n>1</n><d>20</d><m>0</m></roll>
+		<defaultDifficulty>16</defaultDifficulty>
+		<common>You are attempting to run away.</common>
+		<success>You manage to get away!</success>
+		<failure>You fail to elude your foes.</failure>
 	</skill>
 </data>
 
